@@ -6,12 +6,13 @@
 #include "StepperControl.h"
 #include "Compass.h"
 #include "LinearActuator.h"
+//#include "EthernetBridge.h"
 
 
 void handleSerialCommands() {
-  if (Serial.available() == 0) return;
+  if (Serial1.available() == 0) return;
 
-  String jsonString = Serial.readStringUntil('\n');
+  String jsonString = Serial1.readStringUntil('\n');
   jsonString.trim();
   if (jsonString.length() == 0) return;
 
@@ -41,7 +42,7 @@ void handleSerialCommands() {
         preferences.putInt("maxspeed", value);
         preferences.end();
       }
-      serializeJson(doc, Serial);
+      serializeJson(doc, Serial1);
       Serial.println();        
     }
     //{"cmd":"acceleration","value":5000}; {"cmd":"acceleration","value":null}
@@ -57,10 +58,10 @@ void handleSerialCommands() {
         preferences.putInt("acceleration", value);
         preferences.end();
       }
-      serializeJson(doc, Serial);
+      serializeJson(doc, Serial1);
       Serial.println();        
     }
-    //{"cmd":"setcurrent","value":0}
+    //{"cmd":"setcurrent","value":null}
     else if (strcmp(cmd, "setcurrent") == 0){
       stepper.setCurrentPosition(value);
       serializeJson(doc, Serial);
@@ -140,18 +141,7 @@ void handleSerialCommands() {
       stepper.move((azimuth - heading) * stepper_ratio);
       }
     }
-    //{"cmd":"getheading","value":0}
-//    else if (strcmp(cmd, "getheading") == 0){
-//      if (!compassFound) {
-//        doc["error"] = "ICM-20948 не підключено";
-//        serializeJson(doc, Serial); Serial.println();
-//        return;
-//      }
-//      doc["value"] = getHeading();
-//      serializeJson(doc, Serial);
-//      Serial.println();
-//    }
-    //{"cmd":"pry","value":0}
+    //{"cmd":"pry","value":null}
     else if (strcmp(cmd, "pry") == 0){
       if (!compassFound) {
         doc["error"] = "ICM-20948 не підключено";
@@ -251,31 +241,31 @@ void handleSerialCommands() {
       serializeJson(doc, Serial);
       Serial.println();
     }
-    //{"cmd":"restart","value":0}
+    //{"cmd":"restart","value":null}
     else if (strcmp(cmd, "restart") == 0){
       serializeJson(doc, Serial);
       Serial.println();
       ESP.restart();
     }
-   //{"cmd":"lextend","value":0}
+   //{"cmd":"lextend","value":null}
     else if (strcmp(cmd, "lextend") == 0){
       linearExtend();
       serializeJson(doc, Serial);
       Serial.println();
     }
-    //{"cmd":"lretract","value":0}
+    //{"cmd":"lretract","value":null}
     else if (strcmp(cmd, "lretract") == 0){
       linearRetract();
       serializeJson(doc, Serial);
       Serial.println();
     }
-    //{"cmd":"lsleep","value":0}
+    //{"cmd":"lsleep","value":null}
     else if (strcmp(cmd, "lsleep") == 0){
       linearSleep();
       serializeJson(doc, Serial);
       Serial.println();
     }
-    //{"cmd":"lbrake","value":0}
+    //{"cmd":"lbrake","value":null}
     else if (strcmp(cmd, "lbrake") == 0){
       linearBrake();
       serializeJson(doc, Serial);
@@ -299,20 +289,10 @@ void handleSerialCommands() {
       serializeJson(doc, Serial);
       Serial.println();
     }
-    //{"cmd":"linear_speed","value":180}
-    else if (strcmp(cmd, "linear_speed") == 0) {
-      int speed = value;
-      speed = constrain(speed, -255, 255);
-      linearSetSpeed(speed);
-      doc["speed"] = speed;
-      serializeJson(doc, Serial);
-      Serial.println();
-    }
     else {
       doc["cmd"] = "error";
       doc["value"] = "unknown_cmd"; 
       serializeJson(doc, Serial);
       Serial.println();
     }
-  
 }

@@ -4,11 +4,17 @@
 #include "WiFiManager.h"
 #include "SerialProtocol.h"
 #include "LinearActuator.h"
-#include "EthernetBridge.h"
+//#include "EthernetBridge.h"
 #include <Wire.h>
 
 Preferences preferences;                                      
 AccelStepper stepper(AccelStepper::DRIVER, STEP_PIN, DIR_PIN);
+
+// CH9120 підключений до дефолтного UART0 на XIAO ESP32S3
+#define ETH_RX_PIN  44   // GPIO44 → TXD CH9120
+#define ETH_TX_PIN  43   // GPIO43 → RXD CH9120
+#define ETH_RESET_PIN  7   // GPIO7 → RSTi CH9120 (активний LOW)
+
 
 char wifi_ssid[64] = {0};
 char wifi_password[64] = {0};
@@ -41,9 +47,23 @@ void setup() {
 
   wifiSetup();           // ← запускаємо WiFi ПЕРШИМ!
   Serial.println("WiFi запущено");
-  ethernetBridgeSetup();          // Новий Ethernet міст на GPIO16/17
+  //ethernetBridgeSetup();          // Новий Ethernet міст на GPIO16/17
 
-  // 2. Ініціалізація I2C — з таймаутом
+  // 2. Скидання CH9120
+  pinMode(ETH_RESET_PIN, OUTPUT);
+  digitalWrite(ETH_RESET_PIN, LOW);
+  delay(1000);
+  digitalWrite(ETH_RESET_PIN, HIGH);
+  delay(500);
+
+  // 3. Ініціалізація Serial1 для зв'язку з CH9120
+  // Швидкість має бути ТАКА Ж, як налаштована в конфігурації CH9120 (за замовчуванням 9600 або 115200)
+  Serial1.begin(115200, SERIAL_8N1, ETH_RX_PIN, ETH_TX_PIN);
+
+  Serial.println(F("Ethernet Bridge Ready. Listening to Serial1..."));
+
+
+  // 4. Ініціалізація I2C — з таймаутом
   Serial.print("I2C init на пінах SDA=4, SCL=5 ... ");
   Wire.setClock(100000);
   Wire.begin();
@@ -56,11 +76,12 @@ void setup() {
 
   Serial.println("=== ВСЕ ГОТОВО ===");
 }
+
 void loop() {
   handleSerialCommands();   // JSON по Serial
   stepper.run();            // обов'язково часто!
   linearAutoBrake();
   updateCompassMode();      // режим компаса
   //wifiLoop();               // WebServer.handleClient(), dnsServer.processNextRequest() тощо
-  ethernetBridgeLoop();       // Ethernet ↔ JSON міст (головна магія)
+  //ethernetBridgeLoop();       // Ethernet ↔ JSON міст (головна магія)
 }
