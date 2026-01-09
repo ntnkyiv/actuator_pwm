@@ -6,7 +6,7 @@
 #include "StepperControl.h"
 #include "Compass.h"
 #include "LinearActuator.h"
-//#include "EthernetBridge.h"
+#include "fw_update.h"
 
 
 void handleSerialCommands() {
@@ -282,6 +282,18 @@ void handleSerialCommands() {
       Serial.println();
       ESP.restart();
     }
+    //{"cmd":"ota_start","size":<filesize>}
+    else if (doc["cmd"] == "ota_start") {
+      fullFileSize = doc["size"]; // Розмір файлу в байтах
+      bytesReceived = 0;
+    
+      if (Update.begin(fullFileSize)) {
+        isUpdating = true;
+        Serial.println("OTA режим активовано. Очікування байтів...");
+      } else {
+        Update.printError(Serial);
+      }
+}
     else {
       doc["cmd"] = "error";
       doc["value"] = "unknown_cmd"; 

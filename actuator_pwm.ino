@@ -4,8 +4,9 @@
 #include "WiFiManager.h"
 #include "SerialProtocol.h"
 #include "LinearActuator.h"
-//#include "EthernetBridge.h"
+#include "fw_update.h"
 #include <Wire.h>
+#include <Update.h>
 
 Preferences preferences;                                      
 AccelStepper stepper(AccelStepper::DRIVER, STEP_PIN, DIR_PIN);
@@ -33,6 +34,11 @@ float currentPitch = 0.0f;
 float currentRoll  = 0.0f;
 float currentYaw   = 0.0f;
 bool compassFound = false;
+
+//=== Світлодіод ===
+unsigned long ledPreviousMillis = 0;
+const long ledInterval = 500;  // Інтервал мигання в мс (тут 500 мс = 1 раз на секунду)
+bool ledState = false;
 
 void setup() {
   Serial.begin(115200);
@@ -74,14 +80,25 @@ void setup() {
   stepperInit();
   linearInit();
 
+  // Світлодіод
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, LOW);  // Вимкнено на старті
+
   Serial.println("=== ВСЕ ГОТОВО ===");
 }
 
 void loop() {
+
+  FWUpdateLoop();
   handleSerialCommands();   // JSON по Serial
   stepper.run();            // обов'язково часто!
   linearAutoBrake();
   updateCompassMode();      // режим компаса
-  //wifiLoop();               // WebServer.handleClient(), dnsServer.processNextRequest() тощо
-  //ethernetBridgeLoop();       // Ethernet ↔ JSON міст (головна магія)
+  unsigned long currentMillis = millis();
+
+  if (currentMillis - ledPreviousMillis >= ledInterval) {
+    ledPreviousMillis = currentMillis;
+    ledState = !ledState;
+    digitalWrite(LED_BUILTIN, ledState ? HIGH : LOW);
+  }
 }

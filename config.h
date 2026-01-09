@@ -32,3 +32,4 @@ extern bool calibrationInProgress;
 // === Налаштування компас-режиму ===
 extern const long interval;
 extern unsigned long previousMillis;
+
