@@ -61,100 +61,6 @@ void handleSerialCommands() {
       serializeJson(doc, Serial1);
       Serial.println();        
     }
-    //{"cmd":"setcurrent","value":null}
-    else if (strcmp(cmd, "setcurrent") == 0){
-      stepper.setCurrentPosition(value);
-      serializeJson(doc, Serial);
-      Serial.println();
-    }
-    //{"cmd":"absolute","value":1000}
-    else if (strcmp(cmd, "absolute") == 0){
-      stepper.moveTo(value);
-      serializeJson(doc, Serial);
-      Serial.println();
-    }
-      //{"cmd":"relative","value":1000}
-    else if (strcmp(cmd, "relative") == 0){
-      stepper.move(value);
-      serializeJson(doc, Serial);
-      Serial.println();
-    }
-    //{"cmd":"degree","value":5}
-    else if (strcmp(cmd, "degree") == 0){
-      moveDegrees(value);
-      serializeJson(doc, Serial);
-      Serial.println();
-    }
-    //{"cmd":"stop","value":0}
-    else if (strcmp(cmd, "stop") == 0){
-      stepper.stop();
-      serializeJson(doc, Serial);
-      Serial.println();
-    }
-    //{"cmd":"calibrate","value":0}
-//    else if (strcmp(cmd, "calibrate") == 0) {
-//      if (!compassFound) {
-//        doc["error"] = "ICM-20948 не підключено";
-//      } else {
-//        calibrateCompass();
-//        doc["status"] = "calibration_started";
-//      }    
-//    }
-    //{"cmd":"compassmode","value":180}; {"cmd":"compassmode","value":null}
-    else if (strcmp(cmd, "compassmode") == 0){
-      if (!compassFound) {
-        doc["error"] = "ICM-20948 не підключено";
-        serializeJson(doc, Serial); Serial.println();
-        return;
-      }
-      if (doc["value"].isNull()){
-        compassMode = false;
-        doc["value"] = "off";
-      }
-      else{
-        compassMode = true;
-        azimuth = fmod(fmod(value, 360.0) + 360.0, 360.0 );    
-      }
-      serializeJson(doc, Serial);
-      Serial.println();
-    }
-    //{"cmd":"azimuth","value":180}; {"cmd":"azimuth","value":null}
-    else if (strcmp(cmd, "azimuth") == 0){
-      if (!compassFound) {
-        doc["error"] = "ICM-20948 не підключено";
-        serializeJson(doc, Serial); Serial.println();
-        return;
-      }
-      if (doc["value"].isNull()){
-        doc["value"] = azimuth;
-      }
-      else{
-        azimuth = fmod(fmod(value, 360.0) + 360.0, 360.0 );    
-      }
-      serializeJson(doc, Serial);
-      Serial.println();
-      updatePRY();
-     if (abs(azimuth - currentYaw) > 180) {
-        stepper.move((heading - azimuth - 180) * stepper_ratio);
-      } 
-      else {
-      stepper.move((azimuth - heading) * stepper_ratio);
-      }
-    }
-    //{"cmd":"pry","value":null}
-    else if (strcmp(cmd, "pry") == 0){
-      if (!compassFound) {
-        doc["error"] = "ICM-20948 не підключено";
-        serializeJson(doc, Serial); Serial.println();
-        return;
-      }
-      updatePRY();
-      doc["pitch"] = currentPitch;
-      doc["roll"]  = currentRoll;
-      doc["yaw"]   = currentYaw;      
-      serializeJson(doc, Serial);
-      Serial.println();
-    }
     //{"cmd":"pulsewidth","value":20}; {"cmd":"pulsewidth","value":null}
     else if (strcmp(cmd, "pulsewidth") == 0){
       if(doc["value"].isNull()){
@@ -203,7 +109,6 @@ void handleSerialCommands() {
       serializeJson(doc, Serial);
       Serial.println();
     }
-
     //{"cmd":"stepsize","value":1.8}; {"cmd":"stepsize","value":null}
     else if (strcmp(cmd, "stepsize") == 0){
       if(doc["value"].isNull()){
@@ -222,6 +127,92 @@ void handleSerialCommands() {
       serializeJson(doc, Serial);
       Serial.println();
     }
+    //{"cmd":"setcurrent","value":null}
+    else if (strcmp(cmd, "setcurrent") == 0){
+      stepper.setCurrentPosition(value);
+      serializeJson(doc, Serial);
+      Serial.println();
+    }
+    //{"cmd":"absolute","value":1000}
+    else if (strcmp(cmd, "absolute") == 0){
+      stepper.moveTo(value);
+      serializeJson(doc, Serial);
+      Serial.println();
+    }
+      //{"cmd":"relative","value":1000}
+    else if (strcmp(cmd, "relative") == 0){
+      stepper.move(value);
+      serializeJson(doc, Serial);
+      Serial.println();
+    }
+    //{"cmd":"degree","value":5}
+    else if (strcmp(cmd, "degree") == 0){
+      moveDegrees(value);
+      serializeJson(doc, Serial);
+      Serial.println();
+    }
+    //{"cmd":"stop","value":0}
+    else if (strcmp(cmd, "stop") == 0){
+      stepper.stop();
+      serializeJson(doc, Serial);
+      Serial.println();
+    }
+    else if (strcmp(cmd, "compassmode") == 0){
+      if (!compassFound) {
+        doc["error"] = "ICM-20948 не підключено";
+        serializeJson(doc, Serial); Serial.println();
+        return;
+      }
+      if (doc["value"].isNull()){
+        compassMode = false;
+        doc["value"] = "off";
+      }
+      else{
+        compassMode = true;
+        azimuth = fmod(fmod(value, 360.0) + 360.0, 360.0 );    
+      }
+      serializeJson(doc, Serial);
+      Serial.println();
+    }
+    //{"cmd":"azimuth","value":180}; {"cmd":"azimuth","value":null}
+    else if (strcmp(cmd, "azimuth") == 0){
+      if (!compassFound) {
+        doc["error"] = "ICM-20948 не підключено";
+        serializeJson(doc, Serial); Serial.println();
+        return;
+      }
+      if (doc["value"].isNull()){
+        doc["value"] = azimuth;
+      }
+      else{
+        azimuth = fmod(fmod(value, 360.0) + 360.0, 360.0 );    
+      }
+      serializeJson(doc, Serial);
+      Serial.println();
+      updatePRY();
+     if (abs(azimuth - currentYaw) > 180) {
+        stepper.move((heading - azimuth - 180) * stepper_ratio);
+      } 
+      else {
+      stepper.move((azimuth - heading) * stepper_ratio);
+      }
+  // === Компас, Акселерометр ===
+    }
+    //{"cmd":"pry","value":null}
+    else if (strcmp(cmd, "pry") == 0){
+      if (!compassFound) {
+        doc["error"] = "ICM-20948 не підключено";
+        serializeJson(doc, Serial); Serial.println();
+        return;
+      }
+      updatePRY();
+      doc["pitch"] = currentPitch;
+      doc["roll"]  = currentRoll;
+      doc["yaw"]   = currentYaw;      
+      serializeJson(doc, Serial);
+      Serial.println();
+    }
+  // === WIFI ===
     //{"cmd":"wifi","value":null}; {"cmd":"wifi","value":0,"wifi_ssid":"your_SSID","password":"your_PASSWORD"}
     else if (strcmp(cmd, "wifi") == 0){
         if(doc["value"].isNull()){
@@ -241,12 +232,8 @@ void handleSerialCommands() {
       serializeJson(doc, Serial);
       Serial.println();
     }
-    //{"cmd":"restart","value":null}
-    else if (strcmp(cmd, "restart") == 0){
-      serializeJson(doc, Serial);
-      Serial.println();
-      ESP.restart();
-    }
+  // === Лінійний актуатор ===
+
    //{"cmd":"lextend","value":null}
     else if (strcmp(cmd, "lextend") == 0){
       linearExtend();
@@ -277,7 +264,7 @@ void handleSerialCommands() {
       serializeJson(doc, Serial);
       Serial.println();
     }
-    //{"cmd":"ltime","value":20000}
+    //{"cmd":"ltime","value":20000}; {"cmd":"ltime","value":null} 
     else if (strcmp(cmd, "ltime") == 0) {
       if (doc["value"].isNull()) {
         doc["value"] = linearGetBrakeTime();
@@ -288,6 +275,12 @@ void handleSerialCommands() {
       }
       serializeJson(doc, Serial);
       Serial.println();
+    }
+    //{"cmd":"restart","value":null}
+    else if (strcmp(cmd, "restart") == 0){
+      serializeJson(doc, Serial);
+      Serial.println();
+      ESP.restart();
     }
     else {
       doc["cmd"] = "error";

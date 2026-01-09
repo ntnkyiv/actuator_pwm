@@ -17,13 +17,14 @@ bool linearExtended = false;
 #define PWM_CH1      0
 #define PWM_CH2      1
 
-static uint32_t brakeDelayMs = 10000;         // за замовчуванням 10 сек
+static uint32_t brakeDelayMs = 20000;         // за замовчуванням 20 сек
 static unsigned long brakeStartTime = 0;
 static bool brakeScheduled = false;
 
 static void loadBrakeTime() {
-  preferences.begin("linear", true);
-  brakeDelayMs = preferences.getUInt("brake_time", 10000);
+  preferences.begin("linear", false);
+  if (!preferences.isKey("brake_time")) preferences.putInt("brake_time", 20000);
+  brakeDelayMs = preferences.getUInt("brake_time");
   preferences.end();
 }
 
