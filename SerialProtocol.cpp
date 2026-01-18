@@ -219,7 +219,13 @@ void handleSerialCommands() {
       Serial1.println();
     }
   // === WIFI ===
-    // {"cmd":"wifimode", "value":1} (Увімкнути) / {"cmd":"wifimode", "value":0} (Вимкнути)
+  // === ЗАПИТ СТАТУСУ WIFI ===
+  //{"cmd":"wifi_status"}
+    else if (strcmp(cmd, "wifi_status") == 0) {
+    // Викликаємо функцію, яка перевірить стан і відправить JSON
+      printCurrentWiFiStatus(); 
+    }    
+  // {"cmd":"wifimode", "value":1} (Увімкнути) / {"cmd":"wifimode", "value":0} (Вимкнути)
     else if (strcmp(cmd, "wifimode") == 0) {
       bool enable = (value == 1);
       

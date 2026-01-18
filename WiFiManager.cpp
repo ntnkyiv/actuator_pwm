@@ -10,6 +10,7 @@
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <Preferences.h>
+#include <ArduinoJson.h>
 
 // Нові об'єкти
 AsyncWebServer server(80);
@@ -131,6 +132,39 @@ void setupRoutes() {
   ws.onEvent(onWsEvent);
   server.addHandler(&ws);
 }
+// ─────────────────────── Нова функція для звіту ПО ЗАПИТУ ───────────────────────
+void printCurrentWiFiStatus() {
+  StaticJsonDocument<300> doc;
+  
+  // Відповідаємо в контексті команди "wifi_status"
+  doc["cmd"] = "wifi_status"; 
+
+  // Перевіряємо реальний стан
+  if (WiFi.getMode() == WIFI_OFF) {
+    doc["status"] = "disabled";
+  }
+  else if (apMode) {
+    doc["status"] = "ap_mode";
+    doc["ip"] = WiFi.softAPIP().toString();
+    doc["ssid"] = ap_ssid;
+  }
+  else if (WiFi.status() == WL_CONNECTED) {
+    doc["status"] = "connected";
+    doc["ip"] = WiFi.localIP().toString();
+    doc["ssid"] = WiFi.SSID(); // Отримуємо назву поточної мережі
+    doc["rssi"] = WiFi.RSSI(); // Рівень сигналу (корисно для діагностики)
+  }
+  else {
+    doc["status"] = "disconnected";
+    // Можна додати інфо, до чого намагаємось підключитись
+    preferences.begin("compass", true);
+    doc["target_ssid"] = preferences.getString("wifi_ssid", "");
+    preferences.end();
+  }
+
+  serializeJson(doc, Serial1);
+  Serial1.println();
+}
 
 // ─────────────────────── Основні функції ───────────────────────
 void stopWiFi() {
@@ -150,7 +184,7 @@ bool connectWiFi() {
     Serial.println("SSID не задано в налаштуваннях.");
     return false;
   }
-
+  
   // Оновлюємо глобальні змінні для відображення в Web
   ssid.toCharArray(wifi_ssid, sizeof(wifi_ssid));
   pass.toCharArray(wifi_password, sizeof(wifi_password));
@@ -170,7 +204,8 @@ bool connectWiFi() {
   Serial.println();
 
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("WiFi підключено!");
+    Serial.println("WiFi підключено! IP: ");
+    Serial.println(WiFi.localIP());
     return true;
   } else {
     Serial.println("Не вдалося підключитися до WiFi.");
@@ -187,7 +222,7 @@ void startAPMode() {
   
   dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
   dnsServer.start(53, "*", WiFi.softAPIP());
-  
+
   Serial.print("AP Mode запущено. SSID: "); Serial.print(ap_ssid);
   Serial.print(" IP: "); Serial.println(WiFi.softAPIP());
 }
