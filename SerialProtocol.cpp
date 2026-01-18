@@ -7,6 +7,9 @@
 #include "Compass.h"
 #include "LinearActuator.h"
 #include "fw_update.h"
+#include "WiFiManager.h"
+
+String receivedMD5 = "";
 
 
 void handleSerialCommands() {
@@ -43,7 +46,7 @@ void handleSerialCommands() {
         preferences.end();
       }
       serializeJson(doc, Serial1);
-      Serial.println();        
+      Serial1.println();        
     }
     //{"cmd":"acceleration","value":5000}; {"cmd":"acceleration","value":null}
     else if (strcmp(cmd, "acceleration") == 0){
@@ -59,7 +62,7 @@ void handleSerialCommands() {
         preferences.end();
       }
       serializeJson(doc, Serial1);
-      Serial.println();        
+      Serial1.println();        
     }
     //{"cmd":"pulsewidth","value":20}; {"cmd":"pulsewidth","value":null}
     else if (strcmp(cmd, "pulsewidth") == 0){
@@ -74,8 +77,8 @@ void handleSerialCommands() {
         preferences.putInt("pulsewidth", value);
         preferences.end();
       }
-      serializeJson(doc, Serial);
-      Serial.println();
+      serializeJson(doc, Serial1);
+      Serial1.println();
     }
     //{"cmd":"microstep","value":32}; {"cmd":"microstep","value":null}
     else if (strcmp(cmd, "microstep") == 0){
@@ -90,8 +93,8 @@ void handleSerialCommands() {
         loadStepperSettings();
         preferences.end();
       }
-      serializeJson(doc, Serial);
-      Serial.println();
+      serializeJson(doc, Serial1);
+      Serial1.println();
     }
     //{"cmd":"reductor","value":9.7}; {"cmd":"reductor","value":null}
     else if (strcmp(cmd, "reductor") == 0){
@@ -106,8 +109,8 @@ void handleSerialCommands() {
         loadStepperSettings();
       }
       preferences.end();
-      serializeJson(doc, Serial);
-      Serial.println();
+      serializeJson(doc, Serial1);
+      Serial1.println();
     }
     //{"cmd":"stepsize","value":1.8}; {"cmd":"stepsize","value":null}
     else if (strcmp(cmd, "stepsize") == 0){
@@ -124,43 +127,44 @@ void handleSerialCommands() {
         loadStepperSettings();
         preferences.end();
       }
-      serializeJson(doc, Serial);
-      Serial.println();
+      serializeJson(doc, Serial1);
+      Serial1.println();
     }
     //{"cmd":"setcurrent","value":null}
     else if (strcmp(cmd, "setcurrent") == 0){
       stepper.setCurrentPosition(value);
-      serializeJson(doc, Serial);
-      Serial.println();
+      serializeJson(doc, Serial1);
+      Serial1.println();
     }
     //{"cmd":"absolute","value":1000}
     else if (strcmp(cmd, "absolute") == 0){
       stepper.moveTo(value);
-      serializeJson(doc, Serial);
-      Serial.println();
+      serializeJson(doc, Serial1);
+      Serial1.println();
     }
       //{"cmd":"relative","value":1000}
     else if (strcmp(cmd, "relative") == 0){
       stepper.move(value);
-      serializeJson(doc, Serial);
-      Serial.println();
+      serializeJson(doc, Serial1);
+      Serial1.println();
     }
     //{"cmd":"degree","value":5}
     else if (strcmp(cmd, "degree") == 0){
       moveDegrees(value);
-      serializeJson(doc, Serial);
-      Serial.println();
+      serializeJson(doc, Serial1);
+      Serial1.println();
     }
     //{"cmd":"stop","value":0}
     else if (strcmp(cmd, "stop") == 0){
       stepper.stop();
-      serializeJson(doc, Serial);
-      Serial.println();
+      serializeJson(doc, Serial1);
+      Serial1.println();
     }
     else if (strcmp(cmd, "compassmode") == 0){
       if (!compassFound) {
         doc["error"] = "ICM-20948 не підключено";
-        serializeJson(doc, Serial); Serial.println();
+        serializeJson(doc, Serial1); 
+        Serial1.println();
         return;
       }
       if (doc["value"].isNull()){
@@ -171,14 +175,15 @@ void handleSerialCommands() {
         compassMode = true;
         azimuth = fmod(fmod(value, 360.0) + 360.0, 360.0 );    
       }
-      serializeJson(doc, Serial);
-      Serial.println();
+      serializeJson(doc, Serial1);
+      Serial1.println();
     }
     //{"cmd":"azimuth","value":180}; {"cmd":"azimuth","value":null}
     else if (strcmp(cmd, "azimuth") == 0){
       if (!compassFound) {
         doc["error"] = "ICM-20948 не підключено";
-        serializeJson(doc, Serial); Serial.println();
+        serializeJson(doc, Serial1); 
+        Serial1.println();
         return;
       }
       if (doc["value"].isNull()){
@@ -187,8 +192,8 @@ void handleSerialCommands() {
       else{
         azimuth = fmod(fmod(value, 360.0) + 360.0, 360.0 );    
       }
-      serializeJson(doc, Serial);
-      Serial.println();
+      serializeJson(doc, Serial1);
+      Serial1.println();
       updatePRY();
      if (abs(azimuth - currentYaw) > 180) {
         stepper.move((heading - azimuth - 180) * stepper_ratio);
@@ -202,23 +207,44 @@ void handleSerialCommands() {
     else if (strcmp(cmd, "pry") == 0){
       if (!compassFound) {
         doc["error"] = "ICM-20948 не підключено";
-        serializeJson(doc, Serial); Serial.println();
+        serializeJson(doc, Serial1); 
+        Serial1.println();
         return;
       }
       updatePRY();
       doc["pitch"] = currentPitch;
       doc["roll"]  = currentRoll;
       doc["yaw"]   = currentYaw;      
-      serializeJson(doc, Serial);
-      Serial.println();
+      serializeJson(doc, Serial1);
+      Serial1.println();
     }
   // === WIFI ===
-    //{"cmd":"wifi","value":null}; {"cmd":"wifi","value":0,"wifi_ssid":"your_SSID","password":"your_PASSWORD"}
+    // {"cmd":"wifimode", "value":1} (Увімкнути) / {"cmd":"wifimode", "value":0} (Вимкнути)
+    else if (strcmp(cmd, "wifimode") == 0) {
+      bool enable = (value == 1);
+      
+      preferences.begin("compass", false);
+      preferences.putBool("wifi_enabled", enable);
+      preferences.end();
+
+      if (enable) {
+        wifiSetup(); // Спробує підключитися або створить AP
+        doc["status"] = "wifi_enabled";
+      } else {
+        stopWiFi(); // Повністю вимкне радіо
+        doc["status"] = "wifi_disabled";
+      }
+      
+      serializeJson(doc, Serial1);
+      Serial1.println();
+    }
+    //{"cmd":"wifi","value":null}; {"cmd":"wifi","wifi_ssid":"...","wifi_password":"..."}
     else if (strcmp(cmd, "wifi") == 0){
         if(doc["value"].isNull()){
         preferences.begin("compass", true);
         doc["wifi_ssid"] = preferences.getString("wifi_ssid", "your_SSID");
         doc["wifi_password"] = preferences.getString("wifi_password", "your_PASSWORD");
+        doc["wifi_enabled"] = preferences.getBool("wifi_enabled", true); // Додаємо статус у відповідь
         preferences.end();
       }
       else{
@@ -228,41 +254,75 @@ void handleSerialCommands() {
         preferences.putString("wifi_ssid", new_ssid);
         preferences.putString("wifi_password", new_password);
         preferences.end();
+        
+        // Опціонально: можна одразу спробувати перепідключитися
+        stopWiFi();
+        wifiSetup();
       }
-      serializeJson(doc, Serial);
-      Serial.println();
+      serializeJson(doc, Serial1);
+      Serial1.println();
     }
+    //{"cmd":"ap_config","value":null}; {"cmd":"ap_config","ap_ssid":"...","ap_password":"..."}
+    else if (strcmp(cmd, "ap_config") == 0) {
+    if (doc["ap_ssid"].isNull()) {
+      // Читання поточних налаштувань
+      preferences.begin("compass", true);
+      doc["ap_ssid"] = preferences.getString("ap_ssid", "CompassActuator");
+      doc["ap_password"] = preferences.getString("ap_password", "12345678");
+      preferences.end();
+    } 
+    else {
+      // Запис нових налаштувань
+      const char* new_ap_ssid = doc["ap_ssid"];
+      const char* new_ap_pass = doc["ap_password"];
+      
+      preferences.begin("compass", false);
+      preferences.putString("ap_ssid", new_ap_ssid);
+      preferences.putString("ap_password", new_ap_pass);
+      preferences.end();
+      
+      // Оновлюємо глобальні змінні в пам'яті, щоб не треба було перезавантажувати для відображення
+      // (але для застосування змін WiFi все одно краще зробити restart)
+      strncpy(ap_ssid, new_ap_ssid, sizeof(ap_ssid));
+      strncpy(ap_password, new_ap_pass, sizeof(ap_password));
+      
+      doc["status"] = "saved_restart_required";
+    }
+    serializeJson(doc, Serial1);
+    Serial1.println();
+  }
+
   // === Лінійний актуатор ===
 
    //{"cmd":"lextend","value":null}
     else if (strcmp(cmd, "lextend") == 0){
       linearExtend();
-      serializeJson(doc, Serial);
-      Serial.println();
+      serializeJson(doc, Serial1);
+      Serial1.println();
     }
     //{"cmd":"lretract","value":null}
     else if (strcmp(cmd, "lretract") == 0){
       linearRetract();
-      serializeJson(doc, Serial);
-      Serial.println();
+      serializeJson(doc, Serial1);
+      Serial1.println();
     }
     //{"cmd":"lsleep","value":null}
     else if (strcmp(cmd, "lsleep") == 0){
       linearSleep();
-      serializeJson(doc, Serial);
-      Serial.println();
+      serializeJson(doc, Serial1);
+      Serial1.println();
     }
     //{"cmd":"lbrake","value":null}
     else if (strcmp(cmd, "lbrake") == 0){
       linearBrake();
-      serializeJson(doc, Serial);
-      Serial.println();
+      serializeJson(doc, Serial1);
+      Serial1.println();
     }
     //{"cmd":"lsetspeed","value":150}
     else if (strcmp(cmd, "lsetspeed") == 0){
       linearSetSpeed(value);
-      serializeJson(doc, Serial);
-      Serial.println();
+      serializeJson(doc, Serial1);
+      Serial1.println();
     }
     //{"cmd":"ltime","value":20000}; {"cmd":"ltime","value":null} 
     else if (strcmp(cmd, "ltime") == 0) {
@@ -273,31 +333,48 @@ void handleSerialCommands() {
         linearSetBrakeTime(value);
         doc["value"] = value;
       }
-      serializeJson(doc, Serial);
-      Serial.println();
+      serializeJson(doc, Serial1);
+      Serial1.println();
     }
     //{"cmd":"restart","value":null}
     else if (strcmp(cmd, "restart") == 0){
-      serializeJson(doc, Serial);
-      Serial.println();
+      serializeJson(doc, Serial1);
+      Serial1.println();
       ESP.restart();
     }
     //{"cmd":"ota_start","size":<filesize>}
     else if (doc["cmd"] == "ota_start") {
-      fullFileSize = doc["size"]; // Розмір файлу в байтах
-      bytesReceived = 0;
-    
+      fullFileSize = doc["size"];
+      receivedMD5 = doc["md5"].as<String>();
+      receivedMD5.toLowerCase(); // Обов'язково!
+      receivedMD5.trim();
+
+      Update.abort(); // Скидаємо все старе
       if (Update.begin(fullFileSize)) {
+        if (!Update.setMD5(receivedMD5.c_str())) {
+             doc["error"] = "md5_set_failed";
+             serializeJson(doc, Serial1);
+             Serial1.println();
+             return;
+        }
+        // 1. Чекаємо трохи і вичищаємо ВСЕ, що залетіло в буфер випадково
+        while(Serial1.available()) { Serial1.read(); } 
+
         isUpdating = true;
-        Serial.println("OTA режим активовано. Очікування байтів...");
-      } else {
-        Update.printError(Serial);
+        bytesReceived = 0;
+        bufferIdx = 0;
+        packetsSaved = 0;
+        lastUpdateByteTime = millis();
+        Serial.printf("[OTA] Старт. Очікую %u байт. MD5: %s\n", fullFileSize, receivedMD5.c_str());
+        Serial.flush();     
+        // 2. ВІДПРАВЛЯЄМО СИГНАЛ СКРИПТУ (тільки зараз!)
+        Serial1.println("RES:READY"); 
       }
-}
+    }
     else {
       doc["cmd"] = "error";
       doc["value"] = "unknown_cmd"; 
-      serializeJson(doc, Serial);
-      Serial.println();
+      serializeJson(doc, Serial1);
+      Serial1.println();
     }
 }

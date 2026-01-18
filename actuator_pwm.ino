@@ -16,9 +16,6 @@ AccelStepper stepper(AccelStepper::DRIVER, STEP_PIN, DIR_PIN);
 #define ETH_TX_PIN  43   // GPIO43 → RXD CH9120
 #define ETH_RESET_PIN  7   // GPIO7 → RSTi CH9120 (активний LOW)
 
-
-char wifi_ssid[64] = {0};
-char wifi_password[64] = {0};
 bool apMode = false;
 
 float stepper_ratio = 0.0f;
@@ -52,8 +49,6 @@ void setup() {
   Serial.println("NVS прочитано");
 
   wifiSetup();           // ← запускаємо WiFi ПЕРШИМ!
-  Serial.println("WiFi запущено");
-  //ethernetBridgeSetup();          // Новий Ethernet міст на GPIO16/17
 
   // 2. Скидання CH9120
   pinMode(ETH_RESET_PIN, OUTPUT);
@@ -64,6 +59,7 @@ void setup() {
 
   // 3. Ініціалізація Serial1 для зв'язку з CH9120
   // Швидкість має бути ТАКА Ж, як налаштована в конфігурації CH9120 (за замовчуванням 9600 або 115200)
+  Serial1.setRxBufferSize(2048);
   Serial1.begin(115200, SERIAL_8N1, ETH_RX_PIN, ETH_TX_PIN);
 
   Serial.println(F("Ethernet Bridge Ready. Listening to Serial1..."));
@@ -88,17 +84,20 @@ void setup() {
 }
 
 void loop() {
+if (isUpdating) {
+    // Тільки цей код має працювати під час оновлення!
+    FWUpdateLoop(); 
+  } else {
+    handleSerialCommands();   // JSON по Serial
+    stepper.run();            // обов'язково часто!
+    linearAutoBrake();
+    updateCompassMode();      // режим компаса
+    unsigned long currentMillis = millis();
 
-  FWUpdateLoop();
-  handleSerialCommands();   // JSON по Serial
-  stepper.run();            // обов'язково часто!
-  linearAutoBrake();
-  updateCompassMode();      // режим компаса
-  unsigned long currentMillis = millis();
-
-  if (currentMillis - ledPreviousMillis >= ledInterval) {
-    ledPreviousMillis = currentMillis;
-    ledState = !ledState;
-    digitalWrite(LED_BUILTIN, ledState ? HIGH : LOW);
+    if (currentMillis - ledPreviousMillis >= ledInterval) {
+      ledPreviousMillis = currentMillis;
+      ledState = !ledState;
+      digitalWrite(LED_BUILTIN, ledState ? HIGH : LOW);
+    }
   }
 }

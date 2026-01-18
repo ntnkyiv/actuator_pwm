@@ -8,10 +8,6 @@
 #define DIR_PIN   4  // GPIO для DIR
 
 // === Глобальні змінні ===
-extern char wifi_ssid[64];
-extern char wifi_password[64];
-extern const char* ap_ssid;
-extern const char* ap_password;
 
 extern bool apMode;
 extern float stepper_ratio;
