@@ -3,6 +3,8 @@
 #include <AccelStepper.h>
 #include <Preferences.h>
 
+#define FW_VERSION "1.0.0"
+
 // === Піни ===
 #define STEP_PIN  3   // GPIO для STEP
 #define DIR_PIN   4  // GPIO для DIR

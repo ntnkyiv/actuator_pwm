@@ -219,7 +219,6 @@ void handleSerialCommands() {
       Serial1.println();
     }
   // === WIFI ===
-  // === ЗАПИТ СТАТУСУ WIFI ===
   //{"cmd":"wifi_status"}
     else if (strcmp(cmd, "wifi_status") == 0) {
     // Викликаємо функцію, яка перевірить стан і відправить JSON
@@ -376,6 +375,20 @@ void handleSerialCommands() {
         // 2. ВІДПРАВЛЯЄМО СИГНАЛ СКРИПТУ (тільки зараз!)
         Serial1.println("RES:READY"); 
       }
+    }
+    // Запит: {"cmd":"version"}
+    else if (strcmp(cmd, "version") == 0) {
+      doc["fw_version"] = FW_VERSION;
+      
+      // Автоматичні макроси часу компіляції
+      // Це дозволяє бачити, коли саме був натиснутий кнопку "Compile"
+      String buildTime = String(__DATE__) + " " + String(__TIME__);
+      doc["build_date"] = buildTime;
+      
+      doc["chip_id"] = String((uint32_t)ESP.getEfuseMac(), HEX); // Унікальний ID чіпа (опціонально)
+
+      serializeJson(doc, Serial1);
+      Serial1.println();
     }
     else {
       doc["cmd"] = "error";
