@@ -218,6 +218,29 @@ void handleSerialCommands() {
       serializeJson(doc, Serial1);
       Serial1.println();
     }
+    //{"cmd":"calibrate"}
+    else if (strcmp(cmd, "calibrate") == 0) {
+    // 1. Повідомляємо сервер, що почали
+    doc.clear();
+    doc["cmd"] = "calibrate";
+    doc["status"] = "started";
+    serializeJson(doc, Serial1);
+    Serial1.println();
+
+    // 2. ЗАПУСКАЄМО ПРОЦЕС (блокуючий)
+    runAutoCalibration();
+
+    // 3. Повідомляємо результат
+    doc.clear();
+    doc["cmd"] = "calibrate";
+    doc["status"] = "done";
+    doc["off_x"] = mag_off_x;
+    doc["off_y"] = mag_off_y;
+    doc["off_z"] = mag_off_z;
+    serializeJson(doc, Serial1);
+    Serial1.println();
+    }
+
   // === WIFI ===
   //{"cmd":"wifi_status"}
     else if (strcmp(cmd, "wifi_status") == 0) {

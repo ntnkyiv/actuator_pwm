@@ -23,14 +23,11 @@ float azimuth = 0.0f;
 float heading = 0.0f;
 bool compassMode = false;
 const float G = 16384.0;
+bool shouldCalibrate = false; // Прапорець для запуску калібрування
 
 unsigned long previousMillis = 0;
 const long interval = 100;
 bool calibrationInProgress = false;
-float currentPitch = 0.0f;
-float currentRoll  = 0.0f;
-float currentYaw   = 0.0f;
-bool compassFound = false;
 
 //=== Світлодіод ===
 unsigned long ledPreviousMillis = 0;
@@ -61,17 +58,8 @@ void setup() {
   // Швидкість має бути ТАКА Ж, як налаштована в конфігурації CH9120 (за замовчуванням 9600 або 115200)
   Serial1.setRxBufferSize(2048);
   Serial1.begin(115200, SERIAL_8N1, ETH_RX_PIN, ETH_TX_PIN);
-
   Serial.println(F("Ethernet Bridge Ready. Listening to Serial1..."));
 
-
-  // 4. Ініціалізація I2C — з таймаутом
-  Serial.print("I2C init на пінах SDA=4, SCL=5 ... ");
-  Wire.setClock(100000);
-  Wire.begin();
-  delay(100);
-
-  // Перевіряємо, чи є LSM303
   compassInit();
   stepperInit();
   linearInit();
@@ -84,7 +72,7 @@ void setup() {
 }
 
 void loop() {
-if (isUpdating) {
+  if (isUpdating) {
     // Тільки цей код має працювати під час оновлення!
     FWUpdateLoop(); 
   } else {
@@ -99,5 +87,16 @@ if (isUpdating) {
       ledState = !ledState;
       digitalWrite(LED_BUILTIN, ledState ? HIGH : LOW);
     }
+  }
+  if (shouldCalibrate) {
+    shouldCalibrate = false; // Скидаємо прапорець
+    Serial.println("Веб-запит: Старт калібрування...");
+
+    // Вимикаємо watchdog на час довгої операції (опціонально, але бажано)
+    // esp_task_wdt_init(30, false); 
+
+    runAutoCalibration(); // Функція з Compass.cpp
+
+    // esp_task_wdt_init(5, true); // Вмикаємо назад
   }
 }

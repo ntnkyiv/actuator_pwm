@@ -131,6 +131,14 @@ const char index_html[] PROGMEM = R"rawliteral(
   </div>
 
   <div class="card">
+  <h2>Налаштування Компасу</h2>
+  <p>Автоматичне калібрування (360&deg;)</p>
+  <button onclick="startCalibration()" style="background-color: #d32f2f;">
+    ЗАПУСТИТИ КАЛІБРУВАННЯ
+  </button>
+  </div>
+
+  <div class="card">
     <h2>Linear Actuator</h2>
     
     <div class="control-group">
@@ -195,6 +203,25 @@ function moveLinear(action) {
   } else if (action === 'retract') {
     // Негативна швидкість = Retract
     s("linear_speed:" + (-speedVal));
+  }
+}
+
+function startCalibration() {
+  // 1. Вимагаємо підтвердження
+  if (confirm("УВАГА!\n\nАнтена почне рухатись, нахилятись та обертатись на 360 градусів.\n\nПереконайтесь, що:\n1. Кабелі не натягнуті і не заплутаються.\n2. Механізму нічого не заважає.\n\nПродовжити?")) {
+    
+    // 2. Якщо ОК — відправляємо запит
+    fetch('/calibrate')
+      .then(response => {
+        if (response.ok) {
+          alert("Калібрування почато! Зачекайте близько 30-60 секунд.");
+        } else {
+          alert("Помилка з'єднання");
+        }
+      })
+      .catch(error => {
+        alert("Помилка: " + error);
+      });
   }
 }
 </script>

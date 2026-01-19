@@ -23,6 +23,7 @@ char wifi_password[64];
 char ap_ssid[64] = "CompassActuator";
 char ap_password[64] = "12345678";
 extern void sendPRY();
+extern bool shouldCalibrate;
 
 // ─────────────────────── WebSocket події ───────────────────────
 void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
@@ -127,6 +128,11 @@ void setupRoutes() {
   server.onNotFound([](AsyncWebServerRequest *request) {
     if (apMode) request->redirect("/");
     else request->send(404, "text/plain", "Not found");
+  });
+
+  server.on("/calibrate", HTTP_GET, [](AsyncWebServerRequest *request){
+  shouldCalibrate = true; // Піднімаємо прапорець
+  request->send(200, "text/plain", "Calibration Started");
   });
 
   ws.onEvent(onWsEvent);
