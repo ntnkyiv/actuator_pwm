@@ -76,6 +76,9 @@ void loop() {
     // Тільки цей код має працювати під час оновлення!
     FWUpdateLoop(); 
   } else {
+    if (!shouldCalibrate && !calibrationInProgress) {
+      updatePRY(); 
+    }
     handleSerialCommands();   // JSON по Serial
     stepper.run();            // обов'язково часто!
     linearAutoBrake();

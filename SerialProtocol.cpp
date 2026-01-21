@@ -211,7 +211,6 @@ void handleSerialCommands() {
         Serial1.println();
         return;
       }
-      updatePRY();
       doc["pitch"] = currentPitch;
       doc["roll"]  = currentRoll;
       doc["yaw"]   = currentYaw;      

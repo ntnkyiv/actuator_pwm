@@ -82,19 +82,19 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
 }
 
 void safeSendPRY() {
-  if (calibrationInProgress) {
-    Serial.println("PRY заблоковано під час калібрування");
-    return;
-  }
-  updatePRY();
+  // Ми НЕ читаємо сенсор тут, щоб не блокувати WiFi!
+  // updatePRY(); <--- ЦЕЙ РЯДОК ВИДАЛЕНО
+  
   StaticJsonDocument<200> doc;
+  // Просто беремо останні відомі значення, які оновив loop()
   doc["pitch"] = currentPitch;
   doc["roll"]  = currentRoll;
   doc["yaw"]   = currentYaw;
 
   String json;
   serializeJson(doc, json);
-  ws.textAll(json);}
+  ws.textAll(json);
+}
 
 // ─────────────────────── Налаштування роутів ───────────────────────
 void setupRoutes() {
