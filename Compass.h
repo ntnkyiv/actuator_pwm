@@ -19,12 +19,31 @@
 #define AK_CNTL2        0x31 
 #define AK_CNTL3        0x32 
 
+// === НАЛАШТУВАННЯ БУФЕРА ===
+#define MAX_BUFFER_SIZE 50 // Максимальна глибина історії
+
+// Структура для зберігання однієї точки в радіанах
+struct PRY_Rad {
+  float p;
+  float r;
+  float y;
+};
+
+// Глобальні змінні буфера
+extern int smooth_window;     // Поточний розмір вікна (напр. 10)
+extern PRY_Rad pry_buffer[MAX_BUFFER_SIZE]; // Масив історії
+extern int buffer_idx;        // Поточна позиція запису (голова)
+extern int buffer_count;      // Скільки реальних даних є в буфері
+
 // Глобальні змінні
 extern Adafruit_ICM20948 icm;
 extern bool compassFound;
+extern String compassLog;
 extern float currentPitch;
 extern float currentRoll;
 extern float currentYaw;
+extern float azimuth;
+extern float currentTemp;
 
 // Зміщення калібрування
 extern float mag_off_x;
@@ -37,3 +56,6 @@ void updatePRY();
 void loadCalibration();
 void saveCalibration();
 void runAutoCalibration(); // Повне калібрування
+void moveToAzimuth(float target);
+void resetCalibration();
+void setMotorState(bool enabled); // true = увімкнено (тримай), false = вимкнено (вільно)

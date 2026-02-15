@@ -130,6 +130,19 @@ void handleSerialCommands() {
       serializeJson(doc, Serial1);
       Serial1.println();
     }
+
+    //{"cmd":"stepper", "value":1} (Увімкнути) / {"cmd":"stepper", "value":0} (Вимкнути)
+    else if (strcmp(cmd, "stepper") == 0) {
+      bool state = (value == 1);
+      
+      // Викликаємо нашу функцію
+      setMotorState(state);
+      
+      doc["status"] = state ? "enabled" : "disabled";
+      serializeJson(doc, Serial1);
+      Serial1.println();
+    }
+
     //{"cmd":"setcurrent","value":null}
     else if (strcmp(cmd, "setcurrent") == 0){
       stepper.setCurrentPosition(value);
@@ -186,23 +199,55 @@ void handleSerialCommands() {
         Serial1.println();
         return;
       }
+
+      // 1. ЧИТАННЯ (якщо value: null) - повертаємо де ми є ЗАРАЗ
       if (doc["value"].isNull()){
-        doc["value"] = azimuth;
+        doc["value"] = currentYaw; 
       }
+      // 2. ЗАПИС (якщо value: число) - їдемо
       else{
-        azimuth = fmod(fmod(value, 360.0) + 360.0, 360.0 );    
+        float val = doc["value"];
+        
+        // Викликаємо нашу нову функцію
+        moveToAzimuth(val);
+        
+        // Повертаємо підтвердження цілі
+        doc["value"] = azimuth; 
+      }
+      
+      serializeJson(doc, Serial1);
+      Serial1.println();
+    }
+
+    // Команда: {"cmd":"smooth", "value":20}
+    else if (strcmp(cmd, "smooth") == 0) {
+      extern void resetSmoothingBuffer(); // Оголошуємо доступ до функції
+
+      if (doc["value"].isNull()) {
+        doc["value"] = smooth_window;
+      } 
+      else {
+        int val = (int)value;
+        if (val < 1) val = 1;
+        if (val > MAX_BUFFER_SIZE) val = MAX_BUFFER_SIZE;
+        
+        smooth_window = val;
+        resetSmoothingBuffer(); // Скидаємо FIFO, щоб почати "з чистого листа"
+
+        // Збереження в NVS
+        preferences.begin("compass", false);
+        preferences.putInt("smooth", smooth_window);
+        preferences.end();
+        
+        doc["value"] = smooth_window;
+        doc["status"] = "saved";
       }
       serializeJson(doc, Serial1);
       Serial1.println();
-      updatePRY();
-     if (abs(azimuth - currentYaw) > 180) {
-        stepper.move((heading - azimuth - 180) * stepper_ratio);
-      } 
-      else {
-      stepper.move((azimuth - heading) * stepper_ratio);
-      }
-  // === Компас, Акселерометр ===
     }
+
+  // === Компас, Акселерометр ===
+    
     //{"cmd":"pry","value":null}
     else if (strcmp(cmd, "pry") == 0){
       if (!compassFound) {
@@ -213,7 +258,8 @@ void handleSerialCommands() {
       }
       doc["pitch"] = currentPitch;
       doc["roll"]  = currentRoll;
-      doc["yaw"]   = currentYaw;      
+      doc["yaw"]   = currentYaw;
+      doc["temp"]  = currentTemp;    
       serializeJson(doc, Serial1);
       Serial1.println();
     }
@@ -238,6 +284,48 @@ void handleSerialCommands() {
     doc["off_z"] = mag_off_z;
     serializeJson(doc, Serial1);
     Serial1.println();
+    }
+
+    //{"cmd":"reset_calibration"}
+    else if (strcmp(cmd, "reset_calibration") == 0) {
+      // Викликаємо функцію з Compass.cpp
+      resetCalibration(); 
+
+      doc["status"] = "reset_done";
+      doc["off_x"] = 0.0;
+      doc["off_y"] = 0.0;
+      doc["off_z"] = 0.0;
+      
+      serializeJson(doc, Serial1);
+      Serial1.println();
+    }
+
+    //{"cmd":"init_compass"}
+    else if (strcmp(cmd, "init_compass") == 0) {
+      // 1. Повідомляємо про старт
+      doc["status"] = "processing";
+      serializeJson(doc, Serial1);
+      Serial1.println();
+      delay(10); 
+
+      // 2. Запускаємо процес (лог наповнюється всередині)
+      compassInit(); 
+
+      // 3. Відправляємо результат разом із ЛОГОМ
+      doc.clear();
+      doc["cmd"] = "init_compass";
+      
+      if (compassFound) {
+        doc["status"] = "success";
+      } else {
+        doc["status"] = "error";
+      }
+
+      // ОСЬ ТУТ МАГІЯ: Відправляємо весь текст діагностики
+      //doc["log"] = compassLog; 
+      
+      serializeJson(doc, Serial1);
+      Serial1.println();
     }
 
   // === WIFI ===

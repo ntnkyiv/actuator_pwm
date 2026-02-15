@@ -34,8 +34,10 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
       String cmd = (char*)data;
       cmd.trim();
 
-      Serial.println("Web команда: " + cmd);
-
+      if (cmd != "pry") {
+        Serial.println("Web команда: " + cmd);
+      }
+      
       if (cmd.startsWith("degree:")) {
         float deg = cmd.substring(7).toFloat();
         moveDegrees(deg);
@@ -46,12 +48,14 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
           client->text("ERROR: ICM-20948 не підключено");
           return;
         }
+        
         float az = cmd.substring(8).toFloat();
-        azimuth = fmod(fmod(az, 360.0) + 360.0, 360.0);
-        float diff = azimuth - currentYaw;
-        if (diff > 180) diff -= 360;
-        if (diff < -180) diff += 360;
-        moveDegrees(diff);
+        
+        // Викликаємо ту саму функцію (математика і напрямок будуть ідентичні Serial)
+        moveToAzimuth(az);
+        
+        client->text("OK");
+        safeSendPRY(); 
       }
 
       else if (cmd == "pry" || cmd == "heading") {
@@ -60,6 +64,16 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
           return;
         }
         safeSendPRY();
+      }
+
+      else if (cmd == "init_compass") {
+        compassInit();
+        
+        if (compassFound) {
+          client->text("Compass Init: OK");
+        } else {
+          client->text("Compass Init: FAILED");
+        }
       }
 
       else if (cmd.startsWith("linear_speed:")) {
@@ -76,14 +90,18 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
         stepper.runToPosition();  // миттєва зупинка
       }
 
+      else if (cmd == "reset_calibration") {
+        resetCalibration();
+        client->text("Calibration Reset: OK");
+        // Оновлюємо дані на клієнті, щоб він побачив нулі, якщо потрібно
+      }
+
       client->text("OK");
     }
   }
 }
 
 void safeSendPRY() {
-  // Ми НЕ читаємо сенсор тут, щоб не блокувати WiFi!
-  // updatePRY(); <--- ЦЕЙ РЯДОК ВИДАЛЕНО
   
   StaticJsonDocument<200> doc;
   // Просто беремо останні відомі значення, які оновив loop()

@@ -28,6 +28,8 @@ bool shouldCalibrate = false; // Прапорець для запуску кал
 unsigned long previousMillis = 0;
 const long interval = 100;
 bool calibrationInProgress = false;
+unsigned long lastCompassUpdate = 0;
+const int compassInterval = 100; // Інтервал читання компаса (мс)
 
 //=== Світлодіод ===
 unsigned long ledPreviousMillis = 0;
@@ -72,34 +74,49 @@ void setup() {
 }
 
 void loop() {
+  // 1. ОНОВЛЕННЯ ПРОШИВКИ (OTA)
   if (isUpdating) {
-    // Тільки цей код має працювати під час оновлення!
     FWUpdateLoop(); 
-  } else {
-    if (!shouldCalibrate && !calibrationInProgress) {
-      updatePRY(); 
-    }
-    handleSerialCommands();   // JSON по Serial
-    stepper.run();            // обов'язково часто!
-    linearAutoBrake();
-    updateCompassMode();      // режим компаса
-    unsigned long currentMillis = millis();
+    return; // Якщо оновлюємось, більше нічого не робимо
+  }
 
-    if (currentMillis - ledPreviousMillis >= ledInterval) {
-      ledPreviousMillis = currentMillis;
-      ledState = !ledState;
-      digitalWrite(LED_BUILTIN, ledState ? HIGH : LOW);
+  // 2. ДВИГУН (Найвищий пріоритет - має викликатися завжди)
+  stepper.run();
+  
+  // 3. WIFI та Web (Підтримка зв'язку)
+  // Якщо у вас є функція wifiLoop() у WiFiManager.cpp, розкоментуйте її:
+  // wifiLoop(); 
+
+  // 4. ОБРОБКА КОМАНД (Serial/Ethernet)
+  handleSerialCommands(); 
+  
+  // 5. ЛІНІЙНИЙ АКТУАТОР
+  linearAutoBrake();
+  updateCompassMode(); 
+
+  // 6. ОНОВЛЕННЯ ДАНИХ СЕНСОРІВ (Розумна логіка)
+  // Читаємо компас ТІЛЬКИ якщо двигун стоїть на місці (distanceToGo == 0)
+  // Це гарантує, що I2C не блокує генерацію кроків двигуна.
+  
+  if (stepper.distanceToGo() == 0 && !calibrationInProgress && !shouldCalibrate) {
+    if (millis() - lastCompassUpdate > compassInterval) {
+      updatePRY(); // Читаємо компас/температуру
+      lastCompassUpdate = millis();
     }
   }
+
+  // 7. КАЛІБРУВАННЯ (запуск за прапорцем)
   if (shouldCalibrate) {
-    shouldCalibrate = false; // Скидаємо прапорець
+    shouldCalibrate = false;
     Serial.println("Веб-запит: Старт калібрування...");
+    runAutoCalibration(); 
+  }
 
-    // Вимикаємо watchdog на час довгої операції (опціонально, але бажано)
-    // esp_task_wdt_init(30, false); 
-
-    runAutoCalibration(); // Функція з Compass.cpp
-
-    // esp_task_wdt_init(5, true); // Вмикаємо назад
+  // 8. СВІТЛОДІОД
+  unsigned long currentMillis = millis();
+  if (currentMillis - ledPreviousMillis >= ledInterval) {
+    ledPreviousMillis = currentMillis;
+    ledState = !ledState;
+    digitalWrite(LED_BUILTIN, ledState ? HIGH : LOW);
   }
 }

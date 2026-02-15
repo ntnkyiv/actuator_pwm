@@ -13,3 +13,4 @@ uint32_t linearGetBrakeTime();          // отримати поточний ч�
 
 extern int linearSpeed;
 extern bool linearExtended;
+extern uint32_t brakeDelayMs;
