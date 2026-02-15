@@ -199,81 +199,80 @@ void compassInit() {
 
 
 // === ОНОВЛЕННЯ ДАНИХ ===
+// Додайте на початку файлу коефіцієнт фільтрації (0.0 - 1.0)
+// Чим менше число, тим стабільніші (але повільніші) покази.
+float filterAlpha = 0.1f; 
+
+// Змінні для збереження попередніх фільтрованих значень
+float f_ax = 0, f_ay = 0, f_az = 0;
+float f_mx = 0, f_my = 0, f_mz = 0;
+
 void updatePRY() {
   sensors_event_t a, g, temp, m;
-  
-  // 1. Зчитуємо ВСІ сенсори за один раз - це найважливіше для стабільності
   if (!icm.getEvent(&a, &g, &temp, &m)) return;
 
   currentTemp = temp.temperature;
 
-  float ax = a.acceleration.x;
-  float ay = a.acceleration.y;
-  float az = a.acceleration.z;
+  // --- КРОК 1: Експоненціальна фільтрація сирих даних (Low-pass filter) ---
+  // Це прибере вібрації від моторів на етапі входу
+  f_ax = (a.acceleration.x * filterAlpha) + (f_ax * (1.0f - filterAlpha));
+  f_ay = (a.acceleration.y * filterAlpha) + (f_ay * (1.0f - filterAlpha));
+  f_az = (a.acceleration.z * filterAlpha) + (f_az * (1.0f - filterAlpha));
 
-  // 2. Беремо дані магнітометра з того ж пакету
-  float mx = m.magnetic.x;
-  float my = m.magnetic.y;
-  float mz = m.magnetic.z;
+  f_mx = (m.magnetic.x * filterAlpha) + (f_mx * (1.0f - filterAlpha));
+  f_my = (m.magnetic.y * filterAlpha) + (f_my * (1.0f - filterAlpha));
+  f_mz = (m.magnetic.z * filterAlpha) + (f_mz * (1.0f - filterAlpha));
 
-  // Якщо магнітометр відвалився (видає нулі), не оновлюємо Yaw
-  if (mx == 0.0f && my == 0.0f && mz == 0.0f) {
-    // Можна додати logStep для діагностики, але не часто
-    return;
-  }
+  if (f_mx == 0.0f && f_my == 0.0f && f_mz == 0.0f) return;
 
-  // 3. Застосовуємо офсети калібрування
-  mx -= mag_off_x;
-  my -= mag_off_y;
-  mz -= mag_off_z;
+  // --- КРОК 2: Калібрування фільтрованих значень ---
+  float mx = f_mx - mag_off_x;
+  float my = f_my - mag_off_y;
+  float mz = f_mz - mag_off_z;
 
-  // 4. Розрахунок кутів
-  float raw_p = atan2(ax, sqrt(ay*ay + az*az));
-  float raw_r = atan2(-ay, az);
+  // --- КРОК 3: Розрахунок кутів на чистих даних ---
+  float p_rad = atan2(f_ax, sqrt(f_ay * f_ay + f_az * f_az));
+  float r_rad = atan2(-f_ay, f_az);
   
-  float cp = cos(raw_p); 
-  float sp = sin(raw_p);
-  float cr = cos(raw_r); 
-  float sr = sin(raw_r);
+  float cp = cos(p_rad); float sp = sin(p_rad);
+  float cr = cos(r_rad); float sr = sin(r_rad);
   
-  // Компенсація нахилу (Tilt Compensation)
   float Xh = mx * cp + mz * sp;
   float Yh = mx * sr * sp + my * cr - mz * sr * cp;
   
-  float yaw_raw = atan2(Yh, Xh);
-  
-  // 5. Фільтрація (Згладжування)
-  pry_buffer[buffer_idx].p = raw_p;
-  pry_buffer[buffer_idx].r = raw_r;
-  pry_buffer[buffer_idx].y = yaw_raw;
+  float yaw = atan2(Yh, Xh) * 180.0f / PI;
+  if (yaw < 0) yaw += 360.0f;
+
+  // --- КРОК 4: Додаткове усереднення (ваша буферизація) ---
+  pry_buffer[buffer_idx].p = p_rad;
+  pry_buffer[buffer_idx].r = r_rad;
+  pry_buffer[buffer_idx].y = yaw * PI / 180.0f;
   
   buffer_idx++;
   if (buffer_idx >= smooth_window) buffer_idx = 0;
   if (buffer_count < smooth_window) buffer_count++;
 
-  float sum_sin_p = 0, sum_cos_p = 0;
-  float sum_sin_r = 0, sum_cos_r = 0;
-  float sum_sin_y = 0, sum_cos_y = 0;
-
+  float s_sin_y = 0, s_cos_y = 0;
   for (int i = 0; i < buffer_count; i++) {
-    sum_sin_p += sin(pry_buffer[i].p); sum_cos_p += cos(pry_buffer[i].p);
-    sum_sin_r += sin(pry_buffer[i].r); sum_cos_r += cos(pry_buffer[i].r);
-    sum_sin_y += sin(pry_buffer[i].y); sum_cos_y += cos(pry_buffer[i].y);
+    s_sin_y += sin(pry_buffer[i].y); 
+    s_cos_y += cos(pry_buffer[i].y);
   }
 
-  currentPitch = atan2(sum_sin_p, sum_cos_p) * 180.0f / PI;
-  currentRoll  = atan2(sum_sin_r, sum_cos_r) * 180.0f / PI;
-  float tempYaw = atan2(sum_sin_y, sum_cos_y) * 180.0f / PI;
-
-  if (tempYaw < 0) tempYaw += 360.0f;
-  if (tempYaw >= 360) tempYaw -= 360.0f;
+  // Фінальні значення
+  currentPitch = p_rad * 180.0f / PI;
+  currentRoll  = r_rad * 180.0f / PI;
   
-  currentYaw = tempYaw;
+  float finalYaw = atan2(s_sin_y, s_cos_y) * 180.0f / PI;
+  if (finalYaw < 0) finalYaw += 360.0f;
 
-  // Округлення до 1 знаку
-  currentPitch  = roundf(currentPitch * 10) / 10.0f;
-  currentRoll   = roundf(currentRoll  * 10) / 10.0f;
-  currentYaw    = roundf(currentYaw   * 10) / 10.0f;  
+  // Оновлюємо з невеликим "порогом чутливості", щоб цифри не миготіли
+  if (abs(finalYaw - currentYaw) > 0.1f) {
+    currentYaw = finalYaw;
+  }
+
+  currentPitch = roundf(currentPitch * 10) / 10.0f;
+  currentRoll  = roundf(currentRoll * 10) / 10.0f;
+  currentYaw   = roundf(currentYaw * 10) / 10.0f;
 }
 
 // === ЗБЕРЕЖЕННЯ / ЗАВАНТАЖЕННЯ ===
@@ -283,6 +282,7 @@ void loadCalibration() {
   mag_off_x = prefs.getFloat("off_x", 0.0f);
   mag_off_y = prefs.getFloat("off_y", 0.0f);
   mag_off_z = prefs.getFloat("off_z", 0.0f);
+  filterAlpha = prefs.getFloat("f_alpha", 0.1f);
   smooth_window = prefs.getInt("smooth", 10);
   if (smooth_window < 1) smooth_window = 1;
   prefs.end();
@@ -296,6 +296,14 @@ void saveCalibration() {
   prefs.putFloat("off_z", mag_off_z);
   prefs.end();
 }
+
+void saveFilterSettings() {
+  Preferences prefs;
+  prefs.begin("compass", false);
+  prefs.putFloat("f_alpha", filterAlpha);
+  prefs.end();
+}
+
 void resetCalibration() {
   mag_off_x = 0; mag_off_y = 0; mag_off_z = 0; saveCalibration();
 }

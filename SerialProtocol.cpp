@@ -218,6 +218,26 @@ void handleSerialCommands() {
       serializeJson(doc, Serial1);
       Serial1.println();
     }
+    // {"cmd":"set_filter", "value":0.2}
+    else if (strcmp(cmd, "set_filter") == 0) {
+      if (doc.containsKey("value")) {
+        filterAlpha = doc["value"];
+        saveFilterSettings();
+        
+        doc.clear();
+        doc["cmd"] = "set_filter";
+        doc["status"] = "success";
+        doc["new_alpha"] = filterAlpha;
+        serializeJson(doc, Serial1);
+        Serial1.println();
+      }
+      else {
+        doc.clear();
+        doc["current_alpha"] = filterAlpha;
+        serializeJson(doc, Serial1);
+        Serial1.println();
+      }
+    }
 
     // Команда: {"cmd":"smooth", "value":20}
     else if (strcmp(cmd, "smooth") == 0) {

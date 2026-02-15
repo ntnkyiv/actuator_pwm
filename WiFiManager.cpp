@@ -96,6 +96,12 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
         // Оновлюємо дані на клієнті, щоб він побачив нулі, якщо потрібно
       }
 
+      else if (cmd.startsWith("filter:")) {
+        filterAlpha = cmd.substring(7).toFloat();
+        saveFilterSettings();
+        client->text("Filter Alpha set to: " + String(filterAlpha));
+      }
+
       client->text("OK");
     }
   }

@@ -50,6 +50,9 @@ extern float mag_off_x;
 extern float mag_off_y;
 extern float mag_off_z;
 
+// Змінні emi фільтра
+extern float filterAlpha;
+
 // Функції
 void compassInit();
 void updatePRY();
@@ -59,3 +62,4 @@ void runAutoCalibration(); // Повне калібрування
 void moveToAzimuth(float target);
 void resetCalibration();
 void setMotorState(bool enabled); // true = увімкнено (тримай), false = вимкнено (вільно)
+void saveFilterSettings();
