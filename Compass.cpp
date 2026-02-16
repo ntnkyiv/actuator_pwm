@@ -231,16 +231,20 @@ void updatePRY() {
   float mz = f_mz - mag_off_z;
 
   // --- КРОК 3: Розрахунок кутів на чистих даних ---
-  float p_rad = atan2(f_ax, sqrt(f_ay * f_ay + f_az * f_az));
-  float r_rad = atan2(-f_ay, f_az);
-  
-  float cp = cos(p_rad); float sp = sin(p_rad);
-  float cr = cos(r_rad); float sr = sin(r_rad);
-  
-  float Xh = mx * cp + mz * sp;
-  float Yh = mx * sr * sp + my * cr - mz * sr * cp;
-  
-  float yaw = atan2(Yh, Xh) * 180.0f / PI;
+  // Pitch
+  float p_rad = atan2(-f_ax, sqrt(f_ay * f_ay + f_az * f_az));
+
+  // Roll
+  float r_rad = atan2(f_ay, f_az);
+
+  // Tilt-compensated heading
+  float cp = cos(p_rad), sp = sin(p_rad);
+  float cr = cos(r_rad), sr = sin(r_rad);
+
+  float Xh = mx * cp + my * sr * sp + mz * cr * sp;
+  float Yh = my * cr - mz * sr;
+
+  float yaw = atan2(-Yh, Xh) * 180.0f / PI;  // мінус для CW = зростання
   if (yaw < 0) yaw += 360.0f;
 
   // --- КРОК 4: Додаткове усереднення (ваша буферизація) ---
@@ -395,7 +399,7 @@ void moveToAzimuth(float target) {
   float diff = target - currentYaw;
   if (diff > 180.0f)  diff -= 360.0f;
   if (diff < -180.0f) diff += 360.0f;
-  stepper.move((long)(-diff * stepper_ratio));
+  stepper.move((long)(diff * stepper_ratio));
 }
 
 void setMotorState(bool enabled) {
