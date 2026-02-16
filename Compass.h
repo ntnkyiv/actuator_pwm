@@ -38,7 +38,6 @@ extern int buffer_count;      // Скільки реальних даних є �
 // Глобальні змінні
 extern Adafruit_ICM20948 icm;
 extern bool compassFound;
-extern String compassLog;
 extern float currentPitch;
 extern float currentRoll;
 extern float currentYaw;

@@ -84,8 +84,7 @@ void loop() {
   stepper.run();
   
   // 3. WIFI та Web (Підтримка зв'язку)
-  // Якщо у вас є функція wifiLoop() у WiFiManager.cpp, розкоментуйте її:
-  // wifiLoop(); 
+  wifiLoop();
 
   // 4. ОБРОБКА КОМАНД (Serial/Ethernet)
   handleSerialCommands(); 

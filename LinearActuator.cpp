@@ -23,7 +23,7 @@ static bool brakeScheduled = false;
 
 static void loadBrakeTime() {
   preferences.begin("linear", false);
-  if (!preferences.isKey("brake_time")) preferences.putInt("brake_time", 20000);
+  if (!preferences.isKey("brake_time")) preferences.putUInt("brake_time", 20000);
   brakeDelayMs = preferences.getUInt("brake_time");
   preferences.end();
 }

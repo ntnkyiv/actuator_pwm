@@ -16,7 +16,6 @@ Adafruit_ICM20948 icm;
 
 // Глобальні змінні стану
 bool compassFound = false;
-String compassLog = ""; 
 
 float currentPitch = 0.0f;
 float currentRoll  = 0.0f;
@@ -37,7 +36,6 @@ int buffer_count = 0;
 
 void logStep(String msg) {
   Serial.println(msg);
-  compassLog += msg + "\n";
 }
 
 void writeReg8(uint8_t addr, uint8_t reg, uint8_t val) {
@@ -122,7 +120,6 @@ bool readMagnetometer(float &mx, float &my, float &mz) {
 
 // === ГОЛОВНА ІНІЦІАЛІЗАЦІЯ (З ЦИКЛОМ СПРОБ) ===
 void compassInit() {
-  compassLog = "";
   logStep("=== INIT START (Retry Mode) ===");
   
   pinMode(STEPPER_ENABLE_PIN, OUTPUT);

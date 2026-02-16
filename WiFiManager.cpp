@@ -30,8 +30,8 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
   if (type == WS_EVT_DATA) {
     AwsFrameInfo *info = (AwsFrameInfo*)arg;
     if (info->final && info->index == 0 && info->len == len) {
-      data[len] = 0;
-      String cmd = (char*)data;
+      String cmd;
+      cmd.concat((char*)data, len);
       cmd.trim();
 
       if (cmd != "pry") {
@@ -55,7 +55,8 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
         moveToAzimuth(az);
         
         client->text("OK");
-        safeSendPRY(); 
+        safeSendPRY();
+        return;
       }
 
       else if (cmd == "pry" || cmd == "heading") {
@@ -64,6 +65,7 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
           return;
         }
         safeSendPRY();
+        return;
       }
 
       else if (cmd == "init_compass") {
@@ -74,6 +76,7 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
         } else {
           client->text("Compass Init: FAILED");
         }
+        return;
       }
 
       else if (cmd.startsWith("linear_speed:")) {
@@ -93,15 +96,17 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
       else if (cmd == "reset_calibration") {
         resetCalibration();
         client->text("Calibration Reset: OK");
-        // Оновлюємо дані на клієнті, щоб він побачив нулі, якщо потрібно
+        return;
       }
 
       else if (cmd.startsWith("filter:")) {
-        filterAlpha = cmd.substring(7).toFloat();
+        filterAlpha = constrain(cmd.substring(7).toFloat(), 0.01f, 1.0f);
         saveFilterSettings();
         client->text("Filter Alpha set to: " + String(filterAlpha));
+        return;
       }
 
+      // OK для команд без власної відповіді (degree, linear, stop тощо)
       client->text("OK");
     }
   }

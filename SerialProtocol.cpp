@@ -90,8 +90,8 @@ void handleSerialCommands() {
       else{
         preferences.begin("compass", false);
         preferences.putFloat("microstep", value);
-        loadStepperSettings();
         preferences.end();
+        loadStepperSettings();
       }
       serializeJson(doc, Serial1);
       Serial1.println();
@@ -106,9 +106,9 @@ void handleSerialCommands() {
       else{
         float newValue = doc["value"].as<float>();
         preferences.putFloat("reductor", newValue);
-        loadStepperSettings();
       }
       preferences.end();
+      if(!doc["value"].isNull()) loadStepperSettings();
       serializeJson(doc, Serial1);
       Serial1.println();
     }
@@ -124,8 +124,8 @@ void handleSerialCommands() {
         float val = doc["value"].as<float>();
         preferences.begin("compass", false);
         preferences.putFloat("stepsize", val);
-        loadStepperSettings();
         preferences.end();
+        loadStepperSettings();
       }
       serializeJson(doc, Serial1);
       Serial1.println();
@@ -221,7 +221,7 @@ void handleSerialCommands() {
     // {"cmd":"set_filter", "value":0.2}
     else if (strcmp(cmd, "set_filter") == 0) {
       if (doc.containsKey("value")) {
-        filterAlpha = doc["value"];
+        filterAlpha = constrain((float)doc["value"], 0.01f, 1.0f);
         saveFilterSettings();
         
         doc.clear();
