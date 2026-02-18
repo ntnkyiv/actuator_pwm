@@ -29,7 +29,7 @@ unsigned long previousMillis = 0;
 const long interval = 100;
 bool calibrationInProgress = false;
 unsigned long lastCompassUpdate = 0;
-const int compassInterval = 100; // Інтервал читання компаса (мс)
+const int compassInterval = 10; // Інтервал читання компаса (мс) = 100 Гц
 
 //=== Світлодіод ===
 unsigned long ledPreviousMillis = 0;
