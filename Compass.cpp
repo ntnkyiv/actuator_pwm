@@ -164,7 +164,6 @@ void compassInit() {
         
         compassFound = true;
         loadCalibration();
-        Wire.setClock(400000); 
         logStep(">>> ALL SYSTEMS GREEN");
         
         // Успіх! Виходимо з циклу
@@ -265,11 +264,7 @@ void updatePRY() {
   
   float finalYaw = atan2(s_sin_y, s_cos_y) * 180.0f / PI;
   if (finalYaw < 0) finalYaw += 360.0f;
-
-  // Оновлюємо з невеликим "порогом чутливості", щоб цифри не миготіли
-  if (abs(finalYaw - currentYaw) > 0.1f) {
-    currentYaw = finalYaw;
-  }
+  currentYaw = finalYaw;
 
   currentPitch = roundf(currentPitch * 10) / 10.0f;
   currentRoll  = roundf(currentRoll * 10) / 10.0f;
