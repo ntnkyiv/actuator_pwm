@@ -209,29 +209,28 @@ void updatePRY() {
 
   currentTemp = temp.temperature;
 
-  // --- КРОК 1: Експоненціальна фільтрація сирих даних (Low-pass filter) ---
-  // Це прибере вібрації від моторів на етапі входу
-  f_ax = (a.acceleration.x * filterAlpha) + (f_ax * (1.0f - filterAlpha));
-  f_ay = (a.acceleration.y * filterAlpha) + (f_ay * (1.0f - filterAlpha));
-  f_az = (a.acceleration.z * filterAlpha) + (f_az * (1.0f - filterAlpha));
+  // --- КРОК 1: Сирі дані (EMI фільтр вимкнено) ---
+  float ax = a.acceleration.x;
+  float ay = a.acceleration.y;
+  float az = a.acceleration.z;
 
-  f_mx = (m.magnetic.x * filterAlpha) + (f_mx * (1.0f - filterAlpha));
-  f_my = (m.magnetic.y * filterAlpha) + (f_my * (1.0f - filterAlpha));
-  f_mz = (m.magnetic.z * filterAlpha) + (f_mz * (1.0f - filterAlpha));
+  float mx_raw = m.magnetic.x;
+  float my_raw = m.magnetic.y;
+  float mz_raw = m.magnetic.z;
 
-  if (f_mx == 0.0f && f_my == 0.0f && f_mz == 0.0f) return;
+  if (mx_raw == 0.0f && my_raw == 0.0f && mz_raw == 0.0f) return;
 
-  // --- КРОК 2: Калібрування фільтрованих значень ---
-  float mx = f_mx - mag_off_x;
-  float my = f_my - mag_off_y;
-  float mz = f_mz - mag_off_z;
+  // --- КРОК 2: Калібрування ---
+  float mx = mx_raw - mag_off_x;
+  float my = my_raw - mag_off_y;
+  float mz = mz_raw - mag_off_z;
 
-  // --- КРОК 3: Розрахунок кутів на чистих даних ---
+  // --- КРОК 3: Розрахунок кутів ---
   // Pitch
-  float p_rad = atan2(-f_ax, sqrt(f_ay * f_ay + f_az * f_az));
+  float p_rad = atan2(-ax, sqrt(ay * ay + az * az));
 
   // Roll
-  float r_rad = atan2(f_ay, f_az);
+  float r_rad = atan2(ay, az);
 
   // Tilt-compensated heading
   float cp = cos(p_rad), sp = sin(p_rad);
