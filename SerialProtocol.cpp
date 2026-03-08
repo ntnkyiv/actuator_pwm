@@ -175,7 +175,7 @@ void handleSerialCommands() {
     }
     else if (strcmp(cmd, "compassmode") == 0){
       if (!compassFound) {
-        doc["error"] = "ICM-20948 не підключено";
+        doc["error"] = "Компас не підключено";
         serializeJson(doc, Serial1); 
         Serial1.println();
         return;
@@ -194,7 +194,7 @@ void handleSerialCommands() {
     //{"cmd":"azimuth","value":180}; {"cmd":"azimuth","value":null}
     else if (strcmp(cmd, "azimuth") == 0){
       if (!compassFound) {
-        doc["error"] = "ICM-20948 не підключено";
+        doc["error"] = "Компас не підключено";
         serializeJson(doc, Serial1); 
         Serial1.println();
         return;
@@ -218,60 +218,31 @@ void handleSerialCommands() {
       serializeJson(doc, Serial1);
       Serial1.println();
     }
-    // {"cmd":"set_filter", "value":0.2}
-    else if (strcmp(cmd, "set_filter") == 0) {
-      if (doc.containsKey("value")) {
-        filterAlpha = constrain((float)doc["value"], 0.01f, 1.0f);
-        saveFilterSettings();
-        
-        doc.clear();
-        doc["cmd"] = "set_filter";
-        doc["status"] = "success";
-        doc["new_alpha"] = filterAlpha;
-        serializeJson(doc, Serial1);
-        Serial1.println();
-      }
-      else {
-        doc.clear();
-        doc["current_alpha"] = filterAlpha;
-        serializeJson(doc, Serial1);
-        Serial1.println();
-      }
-    }
+  // === Компас, Акселерометр ===
 
-    // Команда: {"cmd":"smooth", "value":20}
-    else if (strcmp(cmd, "smooth") == 0) {
-      extern void resetSmoothingBuffer(); // Оголошуємо доступ до функції
+    //{"cmd":"calibrate","value":3}
+    else if (strcmp(cmd, "calibrate") == 0) {
+      int cycles = doc["value"] | 1;
+      if (cycles < 1) cycles = 1;
 
-      if (doc["value"].isNull()) {
-        doc["value"] = smooth_window;
-      } 
-      else {
-        int val = (int)value;
-        if (val < 1) val = 1;
-        if (val > MAX_BUFFER_SIZE) val = MAX_BUFFER_SIZE;
-        
-        smooth_window = val;
-        resetSmoothingBuffer(); // Скидаємо FIFO, щоб почати "з чистого листа"
+      doc["status"] = "started";
+      doc["cycles"] = cycles;
+      serializeJson(doc, Serial1);
+      Serial1.println();
 
-        // Збереження в NVS
-        preferences.begin("compass", false);
-        preferences.putInt("smooth", smooth_window);
-        preferences.end();
-        
-        doc["value"] = smooth_window;
-        doc["status"] = "saved";
-      }
+      runBNO08xCalibration(cycles);
+
+      doc.clear();
+      doc["cmd"] = "calibrate";
+      doc["status"] = "done";
       serializeJson(doc, Serial1);
       Serial1.println();
     }
 
-  // === Компас, Акселерометр ===
-    
     //{"cmd":"pry","value":null}
     else if (strcmp(cmd, "pry") == 0){
       if (!compassFound) {
-        doc["error"] = "ICM-20948 не підключено";
+        doc["error"] = "Компас не підключено";
         serializeJson(doc, Serial1); 
         Serial1.println();
         return;
@@ -283,71 +254,6 @@ void handleSerialCommands() {
       serializeJson(doc, Serial1);
       Serial1.println();
     }
-    //{"cmd":"calibrate"}
-    else if (strcmp(cmd, "calibrate") == 0) {
-    // 1. Повідомляємо сервер, що почали
-    doc.clear();
-    doc["cmd"] = "calibrate";
-    doc["status"] = "started";
-    serializeJson(doc, Serial1);
-    Serial1.println();
-
-    // 2. ЗАПУСКАЄМО ПРОЦЕС (блокуючий)
-    runAutoCalibration();
-
-    // 3. Повідомляємо результат
-    doc.clear();
-    doc["cmd"] = "calibrate";
-    doc["status"] = "done";
-    doc["off_x"] = mag_off_x;
-    doc["off_y"] = mag_off_y;
-    doc["off_z"] = mag_off_z;
-    serializeJson(doc, Serial1);
-    Serial1.println();
-    }
-
-    //{"cmd":"reset_calibration"}
-    else if (strcmp(cmd, "reset_calibration") == 0) {
-      // Викликаємо функцію з Compass.cpp
-      resetCalibration(); 
-
-      doc["status"] = "reset_done";
-      doc["off_x"] = 0.0;
-      doc["off_y"] = 0.0;
-      doc["off_z"] = 0.0;
-      
-      serializeJson(doc, Serial1);
-      Serial1.println();
-    }
-
-    //{"cmd":"init_compass"}
-    else if (strcmp(cmd, "init_compass") == 0) {
-      // 1. Повідомляємо про старт
-      doc["status"] = "processing";
-      serializeJson(doc, Serial1);
-      Serial1.println();
-      delay(10); 
-
-      // 2. Запускаємо процес (лог наповнюється всередині)
-      compassInit(); 
-
-      // 3. Відправляємо результат разом із ЛОГОМ
-      doc.clear();
-      doc["cmd"] = "init_compass";
-      
-      if (compassFound) {
-        doc["status"] = "success";
-      } else {
-        doc["status"] = "error";
-      }
-
-      // ОСЬ ТУТ МАГІЯ: Відправляємо весь текст діагностики
-      //doc["log"] = compassLog; 
-      
-      serializeJson(doc, Serial1);
-      Serial1.println();
-    }
-
   // === WIFI ===
   //{"cmd":"wifi_status"}
     else if (strcmp(cmd, "wifi_status") == 0) {
@@ -453,9 +359,12 @@ void handleSerialCommands() {
       serializeJson(doc, Serial1);
       Serial1.println();
     }
-    //{"cmd":"lsetspeed","value":150}
+    //{"cmd":"lsetspeed","value":3}  value = рівень 1–5 (від'ємний = retract)
     else if (strcmp(cmd, "lsetspeed") == 0){
-      linearSetSpeed(value);
+      int level = (int)value;
+      int pwm = linearLevelToSpeed(abs(level));
+      linearSetSpeed(level < 0 ? -pwm : pwm);
+      doc["pwm"] = pwm;
       serializeJson(doc, Serial1);
       Serial1.println();
     }
@@ -467,6 +376,18 @@ void handleSerialCommands() {
       else {
         linearSetBrakeTime(value);
         doc["value"] = value;
+      }
+      serializeJson(doc, Serial1);
+      Serial1.println();
+    }
+    //{"cmd":"lminspeed","value":100}; {"cmd":"lminspeed","value":null}
+    else if (strcmp(cmd, "lminspeed") == 0) {
+      if (doc["value"].isNull()) {
+        doc["value"] = linearGetMinSpeed();
+      }
+      else {
+        linearSetMinSpeed((uint8_t)constrain((int)value, 0, 255));
+        doc["value"] = linearGetMinSpeed();
       }
       serializeJson(doc, Serial1);
       Serial1.println();
@@ -520,9 +441,42 @@ void handleSerialCommands() {
       serializeJson(doc, Serial1);
       Serial1.println();
     }
+    //{"cmd":"actuator_status"}
+    else if (strcmp(cmd, "actuator_status") == 0) {
+      doc.clear();
+      doc["cmd"] = "actuator_status";
+      doc["uptime_ms"] = millis();
+
+      // Компас
+      doc["compass_found"] = compassFound;
+      doc["yaw"]   = currentYaw;
+      doc["pitch"] = currentPitch;
+      doc["roll"]  = currentRoll;
+
+      if (compassFound) {
+        uint32_t lastOkMs, failCount;
+        uint8_t i2c4A, i2c4B, recoveryStage;
+        getBNODiagnostics(lastOkMs, failCount, i2c4A, i2c4B, recoveryStage);
+
+        doc["bno_fail_count"]    = failCount;
+        doc["bno_last_ok_ms"]    = lastOkMs;
+        doc["bno_stale_sec"]     = lastOkMs > 0 ? (millis() - lastOkMs) / 1000 : -1;
+        doc["i2c_0x4A"]          = i2c4A; // 0 = OK
+        doc["i2c_0x4B"]          = i2c4B;
+        doc["bno_recovery_stage"] = recoveryStage; // 0=ok, 1=enableReport, 2=begin_I2C
+      }
+
+      // Степер
+      doc["stepper_pos"]  = stepper.currentPosition();
+      doc["stepper_dist"] = stepper.distanceToGo();
+
+      serializeJson(doc, Serial1);
+      Serial1.println();
+    }
+
     else {
       doc["cmd"] = "error";
-      doc["value"] = "unknown_cmd"; 
+      doc["value"] = "unknown_cmd";
       serializeJson(doc, Serial1);
       Serial1.println();
     }

@@ -25,7 +25,6 @@ extern float currentRoll;
 extern float currentYaw;   // азимут з магнітометра
 extern bool compassFound;
 extern const float G;
-extern bool calibrationInProgress;
 
 // === Налаштування компас-режиму ===
 extern const long interval;

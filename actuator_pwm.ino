@@ -23,11 +23,9 @@ float azimuth = 0.0f;
 float heading = 0.0f;
 bool compassMode = false;
 const float G = 16384.0;
-bool shouldCalibrate = false; // Прапорець для запуску калібрування
 
 unsigned long previousMillis = 0;
 const long interval = 100;
-bool calibrationInProgress = false;
 unsigned long lastCompassUpdate = 0;
 const int compassInterval = 10; // Інтервал читання компаса (мс) = 100 Гц
 
@@ -97,19 +95,13 @@ void loop() {
   // Читаємо компас ТІЛЬКИ якщо двигун стоїть на місці (distanceToGo == 0)
   // Це гарантує, що I2C не блокує генерацію кроків двигуна.
   
-  if (stepper.distanceToGo() == 0 && !calibrationInProgress && !shouldCalibrate) {
+  if (stepper.distanceToGo() == 0) {
     if (millis() - lastCompassUpdate > compassInterval) {
       updatePRY(); // Читаємо компас/температуру
       lastCompassUpdate = millis();
     }
   }
 
-  // 7. КАЛІБРУВАННЯ (запуск за прапорцем)
-  if (shouldCalibrate) {
-    shouldCalibrate = false;
-    Serial.println("Веб-запит: Старт калібрування...");
-    runAutoCalibration(); 
-  }
 
   // 8. СВІТЛОДІОД
   unsigned long currentMillis = millis();

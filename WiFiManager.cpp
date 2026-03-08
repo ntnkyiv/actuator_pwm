@@ -23,7 +23,6 @@ char wifi_password[64];
 char ap_ssid[64] = "CompassActuator";
 char ap_password[64] = "12345678";
 extern void sendPRY();
-extern bool shouldCalibrate;
 
 // ─────────────────────── WebSocket події ───────────────────────
 void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
@@ -80,8 +79,9 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
       }
 
       else if (cmd.startsWith("linear_speed:")) {
-        int speed = cmd.substring(13).toInt();
-        linearSetSpeed(constrain(speed, -255, 255));
+        int level = cmd.substring(13).toInt(); // -5..-1 = retract, 1..5 = extend
+        int pwm = linearLevelToSpeed(abs(level));
+        linearSetSpeed(level < 0 ? -pwm : pwm);
       }      
       else if (cmd == "extend")   linearExtend();
       else if (cmd == "retract")  linearRetract();
@@ -93,16 +93,12 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
         stepper.runToPosition();  // миттєва зупинка
       }
 
-      else if (cmd == "reset_calibration") {
-        resetCalibration();
-        client->text("Calibration Reset: OK");
-        return;
-      }
-
-      else if (cmd.startsWith("filter:")) {
-        filterAlpha = constrain(cmd.substring(7).toFloat(), 0.01f, 1.0f);
-        saveFilterSettings();
-        client->text("Filter Alpha set to: " + String(filterAlpha));
+      else if (cmd.startsWith("calibrate:")) {
+        int cycles = cmd.substring(10).toInt();
+        if (cycles < 1) cycles = 1;
+        client->text("calibrate_started");
+        runBNO08xCalibration(cycles);
+        client->text("calibrate_done");
         return;
       }
 
@@ -159,10 +155,6 @@ void setupRoutes() {
     else request->send(404, "text/plain", "Not found");
   });
 
-  server.on("/calibrate", HTTP_GET, [](AsyncWebServerRequest *request){
-  shouldCalibrate = true; // Піднімаємо прапорець
-  request->send(200, "text/plain", "Calibration Started");
-  });
 
   ws.onEvent(onWsEvent);
   server.addHandler(&ws);

@@ -92,6 +92,8 @@ const char index_html[] PROGMEM = R"rawliteral(
     .btn-action { background: var(--blue); }
     .btn-rotate { background: #333; border: 1px solid var(--accent-color); color: var(--accent-color); }
     .btn-green { background: var(--green); color: #000; }
+    .btn-speed { flex: 0 0 40px; padding: 10px 0; background: #2c2c2c; border: 1px solid #444; color: #888; border-radius: 8px; font-size: 15px; font-weight: 600; }
+    .btn-speed.active { border-color: var(--accent-color); color: var(--accent-color); background: #0a2a2a; }
     .btn-red { background: var(--red); }
     .btn-yellow { background: var(--yellow); color: #000; }
     
@@ -131,26 +133,34 @@ const char index_html[] PROGMEM = R"rawliteral(
   </div>
 
   <div class="card">
-  <h2>Налаштування Компасу</h2>
-  <p>Автоматичне калібрування (360&deg;)</p>
-  <button onclick="startCalibration()" style="background-color: #d32f2f;">
-    ЗАПУСТИТИ КАЛІБРУВАННЯ
-  </button>
+    <h2>Калібрування BNO08x</h2>
+    <div class="control-group">
+      <label style="color:#aaa; font-size:14px;">Циклів:</label>
+      <input type="number" id="calCycles" value="1" min="1" max="10" style="width:60px">
+      <button id="calBtn" class="btn-red" onclick="startCalibration()">КАЛІБРУВАТИ</button>
+    </div>
+    <div id="calStatus" style="font-size:13px; color:#aaa; margin-top:8px; min-height:18px;"></div>
   </div>
 
   <div class="card">
     <h2>Linear Actuator</h2>
-    
+
     <div class="control-group">
-      <label style="color:#aaa; font-size: 14px;">Speed (0-255):</label>
-      <input type="number" id="linSpeed" value="255" min="0" max="255">
+      <label style="color:#aaa; font-size:14px;">Швидкість:</label>
+      <div id="speedBtns" style="display:flex; gap:6px;">
+        <button class="btn-speed" onclick="setLinLevel(1)">1</button>
+        <button class="btn-speed" onclick="setLinLevel(2)">2</button>
+        <button class="btn-speed active" onclick="setLinLevel(3)">3</button>
+        <button class="btn-speed" onclick="setLinLevel(4)">4</button>
+        <button class="btn-speed" onclick="setLinLevel(5)">5</button>
+      </div>
     </div>
 
     <div class="control-group">
       <button class="btn-green" onclick="moveLinear('extend')">EXTEND</button>
       <button class="btn-action" onclick="moveLinear('retract')">RETRACT</button>
     </div>
-    
+
     <div class="control-group">
       <button class="btn-red" onclick="s('brake')">BRAKE</button>
       <button class="btn-yellow" onclick="s('sleep')">SLEEP</button>
@@ -161,68 +171,70 @@ const char index_html[] PROGMEM = R"rawliteral(
 </div>
 
 <script>
-var ws = new WebSocket("ws://"+location.hostname+"/ws");
+var ws;
+var pryTimer;
 
-ws.onopen = () => {
-  document.getElementById("ip").innerHTML = location.hostname;
-  setInterval(() => ws.send("pry"), 250); 
-};
+function connectWS() {
+  ws = new WebSocket("ws://" + location.host + "/ws");
 
-ws.onmessage = e => {
-  try {
-    let j = JSON.parse(e.data);
-    if (j.yaw !== undefined)   document.getElementById("yaw").innerText   = Number(j.yaw).toFixed(1);
-    if (j.pitch !== undefined) document.getElementById("pitch").innerText = Number(j.pitch).toFixed(1);
-    if (j.roll !== undefined)  document.getElementById("roll").innerText  = Number(j.roll).toFixed(1);
-    
-    if(document.getElementById("compassStatus").innerText !== "OK") {
+  ws.onopen = () => {
+    document.getElementById("ip").innerHTML = location.hostname;
+    clearInterval(pryTimer);
+    pryTimer = setInterval(() => { if (ws.readyState === 1) ws.send("pry"); }, 250);
+  };
+
+  ws.onmessage = e => {
+    if (e.data === "calibrate_started") {
+      document.getElementById("calStatus").innerText = "Виконується...";
+      document.getElementById("calBtn").disabled = true;
+      document.getElementById("calBtn").style.opacity = "0.5";
+      return;
+    }
+    if (e.data === "calibrate_done") {
+      document.getElementById("calBtn").disabled = false;
+      document.getElementById("calBtn").style.opacity = "1";
+      document.getElementById("calStatus").innerText = "Завершено ✓";
+      return;
+    }
+    try {
+      let j = JSON.parse(e.data);
+      if (j.yaw   !== undefined) document.getElementById("yaw").innerText   = Number(j.yaw).toFixed(1);
+      if (j.pitch !== undefined) document.getElementById("pitch").innerText = Number(j.pitch).toFixed(1);
+      if (j.roll  !== undefined) document.getElementById("roll").innerText  = Number(j.roll).toFixed(1);
+      if (document.getElementById("compassStatus").innerText !== "OK") {
         document.getElementById("compassStatus").innerHTML = "OK";
         document.getElementById("compassStatus").style.color = "#00c853";
-    }
-  } catch(err) {}
-};
+      }
+    } catch(err) {}
+  };
 
-function s(cmd) {
-  console.log("CMD: " + cmd);
-  ws.send(cmd);
+  ws.onclose = () => { setTimeout(connectWS, 2000); };
 }
 
-// Головна зміна: замість команди extend/retract ми шлемо linear_speed
-// Це гарантує, що швидкість буде застосована
+connectWS();
+
+function s(cmd) {
+  if (ws.readyState === 1) ws.send(cmd);
+}
+
+var linLevel = 3;
+
+function setLinLevel(n) {
+  linLevel = n;
+  document.querySelectorAll('.btn-speed').forEach((b, i) => {
+    b.classList.toggle('active', i + 1 === n);
+  });
+}
+
 function moveLinear(action) {
-  let speedVal = parseInt(document.getElementById('linSpeed').value);
-  
-  // Валідація
-  if (isNaN(speedVal)) speedVal = 255;
-  if (speedVal > 255) speedVal = 255;
-  if (speedVal < 0) speedVal = 0;
-  
-  if (action === 'extend') {
-    // Позитивна швидкість = Extend
-    s("linear_speed:" + speedVal);
-  } else if (action === 'retract') {
-    // Негативна швидкість = Retract
-    s("linear_speed:" + (-speedVal));
-  }
+  s("linear_speed:" + (action === 'extend' ? linLevel : -linLevel));
 }
 
 function startCalibration() {
-  // 1. Вимагаємо підтвердження
-  if (confirm("УВАГА!\n\nАнтена почне рухатись, нахилятись та обертатись на 360 градусів.\n\nПереконайтесь, що:\n1. Кабелі не натягнуті і не заплутаються.\n2. Механізму нічого не заважає.\n\nПродовжити?")) {
-    
-    // 2. Якщо ОК — відправляємо запит
-    fetch('/calibrate')
-      .then(response => {
-        if (response.ok) {
-          alert("Калібрування почато! Зачекайте близько 30-60 секунд.");
-        } else {
-          alert("Помилка з'єднання");
-        }
-      })
-      .catch(error => {
-        alert("Помилка: " + error);
-      });
-  }
+  const cycles = parseInt(document.getElementById("calCycles").value) || 1;
+  if (!confirm("УВАГА!\n\nАнтена рухатиметься " + cycles + " цикл(ів).\nПереконайтесь, що кабелі вільні і механізму нічого не заважає.\n\nПродовжити?")) return;
+  document.getElementById("calStatus").innerText = "Запуск...";
+  s("calibrate:" + cycles);
 }
 </script>
 </body>

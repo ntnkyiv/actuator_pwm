@@ -18,19 +18,28 @@ bool linearExtended = false;
 #define PWM_CH2      1
 
 uint32_t brakeDelayMs = 20000;         // за замовчуванням 20 сек
+uint8_t  linearMinSpeed = 0;           // мінімальна ненульова швидкість (0 = вимкнено)
 static unsigned long brakeStartTime = 0;
 static bool brakeScheduled = false;
 
-static void loadBrakeTime() {
+static void loadSettings() {
   preferences.begin("linear", false);
   if (!preferences.isKey("brake_time")) preferences.putUInt("brake_time", 20000);
-  brakeDelayMs = preferences.getUInt("brake_time");
+  if (!preferences.isKey("min_speed"))  preferences.putUChar("min_speed", 0);
+  brakeDelayMs   = preferences.getUInt("brake_time");
+  linearMinSpeed = preferences.getUChar("min_speed");
   preferences.end();
 }
 
 static void saveBrakeTime() {
   preferences.begin("linear", false);
   preferences.putUInt("brake_time", brakeDelayMs);
+  preferences.end();
+}
+
+static void saveMinSpeed() {
+  preferences.begin("linear", false);
+  preferences.putUChar("min_speed", linearMinSpeed);
   preferences.end();
 }
 
@@ -44,13 +53,19 @@ void linearInit() {
   ledcAttach(LIN_PIN_IN1, PWM_FREQ, PWM_RES);
   ledcAttach(LIN_PIN_IN2, PWM_FREQ, PWM_RES);
 
-  loadBrakeTime();
+  loadSettings();
   Serial.printf("Лінійний актуатор PWM готовий (IN1=GPIO%d, IN2=GPIO%d, %u кГц)\n", 
                 LIN_PIN_IN1, LIN_PIN_IN2, PWM_FREQ / 1000);
 }
 
 void linearSetSpeed(int speed) {
   speed = constrain(speed, -255, 255);
+  // Застосовуємо мінімальну швидкість для ненульових значень
+  if (speed != 0 && linearMinSpeed > 0) {
+    speed = (speed > 0)
+      ? max((int)speed, (int)linearMinSpeed)
+      : min((int)speed, -(int)linearMinSpeed);
+  }
   linearSpeed = speed;
   linearExtended = (speed > 0);
 
@@ -101,4 +116,20 @@ void linearSetBrakeTime(uint32_t ms) {
 
 uint32_t linearGetBrakeTime() {
   return brakeDelayMs;
+}
+
+void linearSetMinSpeed(uint8_t val) {
+  linearMinSpeed = val; // 0 = вимкнено
+  saveMinSpeed();
+}
+
+uint8_t linearGetMinSpeed() {
+  return linearMinSpeed;
+}
+
+// Конвертація рівня 1–5 у PWM значення між linearMinSpeed та 255
+int linearLevelToSpeed(int level) {
+  level = constrain(level, 1, 5);
+  int minS = (linearMinSpeed > 0) ? linearMinSpeed : 0;
+  return (int)(minS + (level - 1) * (255 - minS) / 4.0f);
 }

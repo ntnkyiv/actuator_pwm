@@ -1,20 +1,19 @@
 #include "Compass.h"
 #include "config.h"
 #include <Wire.h>
-#include <Adafruit_ICM20948.h>
+#include <Adafruit_BNO08x.h>
 #include <Preferences.h>
 #include "StepperControl.h"
 #include "LinearActuator.h"
+#include "esp_task_wdt.h"
 
-// === PIN SETUP ===
-#define STEPPER_ENABLE_PIN D10 // 0 = Enable, 1 = Disable
+#define STEPPER_ENABLE_PIN D10
 
 extern AccelStepper stepper;
-extern float stepper_ratio; 
+extern float stepper_ratio;
 
-Adafruit_ICM20948 icm;
+Adafruit_BNO08x bno08x(-1); // без reset-піна
 
-// Глобальні змінні стану
 bool compassFound = false;
 
 float currentPitch = 0.0f;
@@ -22,42 +21,25 @@ float currentRoll  = 0.0f;
 float currentYaw   = 0.0f;
 float currentTemp  = 0.0f;
 
-float mag_off_x = 0.0f;
-float mag_off_y = 0.0f;
-float mag_off_z = 0.0f;
+// Діагностичні змінні
+static uint32_t bnoLastOkMs       = 0;
+static uint32_t bnoFailCount      = 0;
+static uint8_t  bnoAddress        = 0;
+static uint8_t  bnoRecoveryStage  = 0;
+static uint32_t bnoLastRecoveryMs = 0;
 
-// Буферизація
-int smooth_window = 10;            
-PRY_Rad pry_buffer[MAX_BUFFER_SIZE]; 
-int buffer_idx = 0;                
-int buffer_count = 0;              
 
-// === НИЗЬКОРІВНЕВІ ФУНКЦІЇ ===
+// === ДОПОМІЖНІ ===
 
 void logStep(String msg) {
   Serial.println(msg);
-}
-
-void writeReg8(uint8_t addr, uint8_t reg, uint8_t val) {
-  Wire.beginTransmission(addr);
-  Wire.write(reg);
-  Wire.write(val);
-  Wire.endTransmission();
-}
-
-uint8_t readReg8(uint8_t addr, uint8_t reg) {
-  Wire.beginTransmission(addr);
-  Wire.write(reg);
-  Wire.endTransmission(false);
-  Wire.requestFrom(addr, (uint8_t)1);
-  return Wire.read();
 }
 
 void recoverI2C(int sdaPin, int sclPin) {
   pinMode(sdaPin, INPUT_PULLUP);
   pinMode(sclPin, INPUT_PULLUP);
   delay(10);
-  
+
   if (digitalRead(sdaPin) == LOW) {
     logStep("I2C BUS STUCK! Recovering...");
     pinMode(sclPin, OUTPUT);
@@ -66,327 +48,240 @@ void recoverI2C(int sdaPin, int sclPin) {
       digitalWrite(sclPin, LOW);  delayMicroseconds(10);
     }
     pinMode(sclPin, INPUT_PULLUP);
+    delay(5);
   }
-  
+
   pinMode(sdaPin, OUTPUT); digitalWrite(sdaPin, LOW);
   pinMode(sclPin, OUTPUT); digitalWrite(sclPin, HIGH);
   delayMicroseconds(5);
   digitalWrite(sdaPin, HIGH);
+  delayMicroseconds(5);
   pinMode(sdaPin, INPUT_PULLUP);
+  pinMode(sclPin, INPUT_PULLUP);
 }
 
-// === ПРЕ-ІНІЦІАЛІЗАЦІЯ (Manual Kick) ===
-bool forceMagReset(uint8_t icmAddr) {
-  logStep(">>> PRE-BOOT MAG RESET <<<");
+// === ІНІЦІАЛІЗАЦІЯ ===
 
-  writeReg8(icmAddr, 0x06, 0x01); // PWR_MGMT_1 -> Auto Clock
-  delay(10);
-
-  writeReg8(icmAddr, 0x7F, 0x00); 
-  writeReg8(icmAddr, 0x0F, 0x02); // INT_PIN_CFG -> Bypass EN
-  delay(50);
-
-  uint8_t magAddr = 0x0C;
-  uint8_t wia = readReg8(magAddr, 0x01); 
-
-  char buff[32];
-  sprintf(buff, "Mag Raw ID: 0x%02X", wia);
-  logStep(String(buff));
-
-  writeReg8(magAddr, 0x32, 0x01); // Soft Reset
-  logStep("Sent Mag Soft-Reset...");
-  delay(100); 
-
-  writeReg8(icmAddr, 0x0F, 0x00); // Bypass OFF
-  delay(10);
-
-  return (wia == 0x09);
-}
-
-// === ОКРЕМА ФУНКЦІЯ ЧИТАННЯ ===
-bool readMagnetometer(float &mx, float &my, float &mz) {
-  sensors_event_t a, g, temp, m;
-  // Один виклик для отримання всього пакету даних
-  if (!icm.getEvent(&a, &g, &temp, &m)) return false;
-  
-  mx = m.magnetic.x;
-  my = m.magnetic.y;
-  mz = m.magnetic.z;
-  
-  // Перевірка на "завислі" нулі
-  if (mx == 0.0f && my == 0.0f && mz == 0.0f) return false;
-  return true; 
-}
-
-// === ГОЛОВНА ІНІЦІАЛІЗАЦІЯ (З ЦИКЛОМ СПРОБ) ===
 void compassInit() {
-  logStep("=== INIT START (Retry Mode) ===");
-  
+  logStep("=== BNO08x INIT START ===");
+
   pinMode(STEPPER_ENABLE_PIN, OUTPUT);
-  digitalWrite(STEPPER_ENABLE_PIN, HIGH); // Disable Motor
-  delay(500); 
+  digitalWrite(STEPPER_ENABLE_PIN, HIGH);
+  delay(500);
 
   recoverI2C(5, 6);
-  
   Wire.end();
-  Wire.begin(5, 6, 100000); 
+  Wire.begin(5, 6, 100000);
   Wire.setTimeOut(200);
   delay(100);
 
-  compassFound = false;
-  uint8_t icmAddr = 0;
+  // I2C сканер
+  logStep("--- I2C Bus Scan ---");
+  bool anyFound = false;
+  for (uint8_t addr = 0x01; addr < 0x7F; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) {
+      char buf[24];
+      sprintf(buf, "  Found: 0x%02X", addr);
+      logStep(String(buf));
+      anyFound = true;
+    }
+  }
+  if (!anyFound) logStep("  No I2C devices found!");
+  logStep("--- Scan Done ---");
 
-  // === ЦИКЛ СПРОБ (5 разів) ===
+  compassFound = false;
+
   for (int attempt = 1; attempt <= 5; attempt++) {
+    esp_task_wdt_reset();
     logStep("Attempt " + String(attempt) + "/5...");
 
-    // 1. Пошук адреси
-    icmAddr = 0;
-    Wire.beginTransmission(0x69);
-    if (Wire.endTransmission() == 0) icmAddr = 0x69;
+    uint8_t bnoAddr = 0;
+    Wire.beginTransmission(0x4A);
+    if (Wire.endTransmission() == 0) bnoAddr = 0x4A;
     else {
-      Wire.beginTransmission(0x68);
-      if (Wire.endTransmission() == 0) icmAddr = 0x68;
+      Wire.beginTransmission(0x4B);
+      if (Wire.endTransmission() == 0) bnoAddr = 0x4B;
     }
 
-    if (icmAddr != 0) {
-      logStep("ICM found at 0x" + String(icmAddr, HEX));
-      
-      // 2. Ручне скидання
-      forceMagReset(icmAddr);
-
-      // 3. Старт бібліотеки
-      if (icm.begin_I2C(icmAddr)) {
-        logStep("Library Init: SUCCESS");
-        
-        icm.setAccelRange(ICM20948_ACCEL_RANGE_4_G);
-        icm.setGyroRange(ICM20948_GYRO_RANGE_250_DPS);
-        
+    if (bnoAddr != 0) {
+      logStep("BNO08x found at 0x" + String(bnoAddr, HEX));
+      esp_task_wdt_reset();
+      if (bno08x.begin_I2C(bnoAddr)) {
+        logStep("BNO08x Init: SUCCESS");
+        bno08x.enableReport(SH2_ROTATION_VECTOR);
         compassFound = true;
-        loadCalibration();
-        logStep(">>> ALL SYSTEMS GREEN");
-        
-        // Успіх! Виходимо з циклу
-        break; 
+        bnoAddress   = bnoAddr;
+        logStep(">>> BNO08x READY");
+        break;
       } else {
-        logStep("Library Init: FAILED");
+        logStep("BNO08x Init: FAILED");
       }
     } else {
-      logStep("ICM Accel not found!");
+      logStep("BNO08x not found!");
     }
 
-    // Якщо не вийшло і це не остання спроба - чекаємо
-    if (!compassFound && attempt < 5) {
+    if (attempt < 5) {
       logStep("Waiting 3s before retry...");
-      delay(3000); 
-      
-      // Спробуємо відновити шину ще раз
+      for (int w = 0; w < 30; w++) {
+        delay(100);
+        esp_task_wdt_reset();
+      }
       recoverI2C(5, 6);
       Wire.begin(5, 6, 100000);
     }
   }
 
   if (!compassFound) {
-    logStep("CRITICAL: Init Failed after 5 attempts.");
+    logStep("CRITICAL: BNO08x not found after 5 attempts.");
   }
 
-  digitalWrite(STEPPER_ENABLE_PIN, LOW); 
+  digitalWrite(STEPPER_ENABLE_PIN, LOW);
 }
-
 
 // === ОНОВЛЕННЯ ДАНИХ ===
-// Додайте на початку файлу коефіцієнт фільтрації (0.0 - 1.0)
-// Чим менше число, тим стабільніші (але повільніші) покази.
-float filterAlpha = 0.1f; 
 
-// Змінні для збереження попередніх фільтрованих значень
-float f_ax = 0, f_ay = 0, f_az = 0;
-float f_mx = 0, f_my = 0, f_mz = 0;
+void getBNODiagnostics(uint32_t &outLastOkMs, uint32_t &outFailCount,
+                       uint8_t &outI2C4A, uint8_t &outI2C4B, uint8_t &outRecoveryStage) {
+  outLastOkMs      = bnoLastOkMs;
+  outFailCount     = bnoFailCount;
+  outRecoveryStage = bnoRecoveryStage;
+  Wire.beginTransmission(0x4A);
+  outI2C4A = Wire.endTransmission();
+  Wire.beginTransmission(0x4B);
+  outI2C4B = Wire.endTransmission();
+}
 
 void updatePRY() {
-  sensors_event_t a, g, temp, m;
-  if (!icm.getEvent(&a, &g, &temp, &m)) return;
+  if (!compassFound) return;
 
-  currentTemp = temp.temperature;
+  sh2_SensorValue_t sv;
+  if (!bno08x.getSensorEvent(&sv)) {
+    bnoFailCount++;
 
-  // --- КРОК 1: Сирі дані (EMI фільтр вимкнено) ---
-  float ax = a.acceleration.x;
-  float ay = a.acceleration.y;
-  float az = a.acceleration.z;
+    if (bnoLastOkMs == 0) return; // ще не було жодного успішного читання
 
-  float mx_raw = m.magnetic.x;
-  float my_raw = m.magnetic.y;
-  float mz_raw = m.magnetic.z;
+    uint32_t now     = millis();
+    uint32_t staleMs = now - bnoLastOkMs;
 
-  if (mx_raw == 0.0f && my_raw == 0.0f && mz_raw == 0.0f) return;
+    // Через 2с — м'яке відновлення: повторний enableReport
+    if (staleMs > 2000 && bnoRecoveryStage == 0 && (now - bnoLastRecoveryMs) > 10000) {
+      bno08x.enableReport(SH2_ROTATION_VECTOR);
+      bnoRecoveryStage  = 1;
+      bnoLastRecoveryMs = now;
+    }
+    // Через 30с — жорстке відновлення: повний begin_I2C
+    else if (staleMs > 30000 && bnoRecoveryStage == 1 && (now - bnoLastRecoveryMs) > 10000) {
+      Wire.beginTransmission(bnoAddress);
+      if (Wire.endTransmission() == 0) {
+        if (bno08x.begin_I2C(bnoAddress)) {
+          bno08x.enableReport(SH2_ROTATION_VECTOR);
+        }
+      }
+      bnoRecoveryStage  = 2;
+      bnoLastRecoveryMs = now;
+    }
 
-  // --- КРОК 2: Калібрування ---
-  float mx = mx_raw - mag_off_x;
-  float my = my_raw - mag_off_y;
-  float mz = mz_raw - mag_off_z;
-
-  // --- КРОК 3: Розрахунок кутів ---
-  // Pitch
-  float p_rad = atan2(-ax, sqrt(ay * ay + az * az));
-
-  // Roll
-  float r_rad = atan2(ay, az);
-
-  // Tilt-compensated heading
-  float cp = cos(p_rad), sp = sin(p_rad);
-  float cr = cos(r_rad), sr = sin(r_rad);
-
-  float Xh = mx * cp + my * sr * sp + mz * cr * sp;
-  float Yh = my * cr - mz * sr;
-
-  float yaw = atan2(-Yh, Xh) * 180.0f / PI;  // мінус для CW = зростання
-  if (yaw < 0) yaw += 360.0f;
-
-  // --- КРОК 4: Додаткове усереднення (ваша буферизація) ---
-  pry_buffer[buffer_idx].p = p_rad;
-  pry_buffer[buffer_idx].r = r_rad;
-  pry_buffer[buffer_idx].y = yaw * PI / 180.0f;
-  
-  buffer_idx++;
-  if (buffer_idx >= smooth_window) buffer_idx = 0;
-  if (buffer_count < smooth_window) buffer_count++;
-
-  float s_sin_y = 0, s_cos_y = 0;
-  for (int i = 0; i < buffer_count; i++) {
-    s_sin_y += sin(pry_buffer[i].y); 
-    s_cos_y += cos(pry_buffer[i].y);
+    return;
   }
 
-  // Фінальні значення
-  currentPitch = p_rad * 180.0f / PI;
-  currentRoll  = r_rad * 180.0f / PI;
-  
-  float finalYaw = atan2(s_sin_y, s_cos_y) * 180.0f / PI;
-  if (finalYaw < 0) finalYaw += 360.0f;
-  currentYaw = finalYaw;
+  if (sv.sensorId != SH2_ROTATION_VECTOR) return;
 
-  currentPitch = roundf(currentPitch * 10) / 10.0f;
-  currentRoll  = roundf(currentRoll * 10) / 10.0f;
-  currentYaw   = roundf(currentYaw * 10) / 10.0f;
-}
+  bnoFailCount     = 0;
+  bnoRecoveryStage = 0;
+  bnoLastOkMs      = millis();
 
-// === ЗБЕРЕЖЕННЯ / ЗАВАНТАЖЕННЯ ===
-void loadCalibration() {
-  Preferences prefs;
-  prefs.begin("compass", true);
-  mag_off_x = prefs.getFloat("off_x", 0.0f);
-  mag_off_y = prefs.getFloat("off_y", 0.0f);
-  mag_off_z = prefs.getFloat("off_z", 0.0f);
-  filterAlpha = prefs.getFloat("f_alpha", 0.1f);
-  smooth_window = prefs.getInt("smooth", 10);
-  if (smooth_window < 1) smooth_window = 1;
-  prefs.end();
-  logStep("Calib Loaded.");
-}
-void saveCalibration() {
-  Preferences prefs;
-  prefs.begin("compass", false);
-  prefs.putFloat("off_x", mag_off_x);
-  prefs.putFloat("off_y", mag_off_y);
-  prefs.putFloat("off_z", mag_off_z);
-  prefs.end();
+  float qw = sv.un.rotationVector.real;
+  float qx = sv.un.rotationVector.i;
+  float qy = sv.un.rotationVector.j;
+  float qz = sv.un.rotationVector.k;
+
+  // Yaw: мінус для CW = зростання (компасна конвенція)
+  float yaw   = -atan2(2.0f*(qw*qz + qx*qy), 1.0f - 2.0f*(qy*qy + qz*qz)) * 180.0f / PI - 180.0f;
+  float roll  =  asin(constrain(2.0f*(qw*qy - qz*qx), -1.0f, 1.0f)) * 180.0f / PI;
+  float pitch =  atan2(2.0f*(qw*qx + qy*qz), 1.0f - 2.0f*(qx*qx + qy*qy)) * 180.0f / PI;
+  if (yaw < 0) yaw += 360.0f;
+
+  currentPitch = roundf(pitch * 10) / 10.0f;
+  currentRoll  = roundf(roll  * 10) / 10.0f;
+  currentYaw   = roundf(yaw   * 10) / 10.0f;
 }
 
-void saveFilterSettings() {
-  Preferences prefs;
-  prefs.begin("compass", false);
-  prefs.putFloat("f_alpha", filterAlpha);
-  prefs.end();
+// === КАЛІБРУВАННЯ MOTCAL ===
+
+static void waitStepper() {
+  while (stepper.distanceToGo() != 0) {
+    stepper.run();
+    esp_task_wdt_reset();
+    yield();
+  }
 }
 
-void resetCalibration() {
-  mag_off_x = 0; mag_off_y = 0; mag_off_z = 0; saveCalibration();
-}
-void resetSmoothingBuffer() { buffer_idx = 0; buffer_count = 0; }
-
-// === КАЛІБРУВАННЯ ТА КЕРУВАННЯ ===
-void waitStepperCalib() {
-  while (stepper.distanceToGo() != 0) { stepper.run(); yield(); }
-}
-void runLinearCalib(int speed, int timeMs) {
-  linearSetSpeed(speed); 
+static void runLinear(int speed, uint32_t timeMs) {
+  linearSetSpeed(speed);
   unsigned long start = millis();
-  while (millis() - start < timeMs) { yield(); }
+  while (millis() - start < timeMs) {
+    esp_task_wdt_reset();
+    yield();
+  }
   linearSetSpeed(0);
 }
 
-void runAutoCalibration() {
-  Serial.println("=== СТАРТ КАЛІБРУВАННЯ ===");
-  if (stepper_ratio <= 0) return;
+void runBNO08xCalibration(int cycles) {
+  Serial.printf("=== MOTCAL КАЛІБРУВАННЯ: %d цикл(ів) ===\n", cycles);
+  if (stepper_ratio <= 0) { Serial.println("ERR: stepper_ratio = 0"); return; }
 
-  float min_x = 10000, max_x = -10000;
-  float min_y = 10000, max_y = -10000;
-  float min_z = 10000, max_z = -10000;
+  long steps180 = (long)(stepper_ratio * 180.0f);
+  long steps360 = (long)(stepper_ratio * 360.0f);
+  uint32_t linTime = brakeDelayMs;
 
-  long linearTimeout = brakeDelayMs; 
-  long steps180 = (long)(stepper_ratio * 180.0);
-  long steps5deg = (long)(stepper_ratio * 5.0); 
+  // Підняти антену один раз перед усіма циклами
+  runLinear(255, linTime);
+  delay(300);
 
-  Serial.println("1. Нахил вниз...");
-  runLinearCalib(-255, linearTimeout);
-  delay(500);
+  for (int c = 1; c <= cycles; c++) {
+    Serial.printf("Цикл %d/%d\n", c, cycles);
+    esp_task_wdt_reset();
 
-  Serial.println("2. Поворот на -180...");
-  stepper.move(-steps180);
-  waitStepperCalib();
-
-  Serial.println("3. Сканування 360...");
-  for (int i = 0; i < 72; i++) {
-    stepper.move(steps5deg);
-    waitStepperCalib();
-    delay(200);
-    
-    float x, y, z;
-    if (readMagnetometer(x, y, z)) {
-       if (x < min_x) min_x = x; if (x > max_x) max_x = x;
-       if (y < min_y) min_y = y; if (y > max_y) max_y = y;
-       if (z < min_z) min_z = z; if (z > max_z) max_z = z;
-    }
-  }
-
-  Serial.println("4. Нахил вгору...");
-  runLinearCalib(255, linearTimeout);
-  delay(500);
-
-  Serial.println("5. Сканування назад 360...");
-  for (int i = 0; i < 72; i++) {
-    stepper.move(-steps5deg);
-    waitStepperCalib();
+    // 1. Повернути на 180° проти годинникової
+    stepper.move(-steps180);
+    waitStepper();
     delay(200);
 
-    float x, y, z;
-    if (readMagnetometer(x, y, z)) {
-       if (x < min_x) min_x = x; if (x > max_x) max_x = x;
-       if (y < min_y) min_y = y; if (y > max_y) max_y = y;
-       if (z < min_z) min_z = z; if (z > max_z) max_z = z;
-    }
+    // 2. Опустити антену вниз
+    runLinear(-255, linTime);
+    delay(300);
+
+    // 3. Повернути на 360° за годинниковою
+    stepper.move(steps360);
+    waitStepper();
+    delay(200);
+
+    // 4. Підняти антену вгору
+    runLinear(255, linTime);
+    delay(300);
+
+    // 5. Повернути на 180° проти годинникової
+    stepper.move(-steps180);
+    waitStepper();
+    delay(200);
   }
 
-  Serial.println("6. Повернення в центр...");
-  stepper.move(steps180);
-  waitStepperCalib();
+  // Опустити антену після завершення
+  runLinear(-255, linTime);
+  delay(300);
 
-  mag_off_x = (max_x + min_x) / 2.0;
-  mag_off_y = (max_y + min_y) / 2.0;
-  mag_off_z = (max_z + min_z) / 2.0;
-
-  Serial.printf("Offset Result: X=%.2f, Y=%.2f, Z=%.2f\n", mag_off_x, mag_off_y, mag_off_z);
-  saveCalibration();
-  
-  runLinearCalib(-255, linearTimeout / 2);
-  Serial.println("Калібрування завершено.");
+  Serial.println("=== КАЛІБРУВАННЯ ЗАВЕРШЕНО ===");
 }
 
-extern float azimuth; 
+// === КЕРУВАННЯ ===
+
+extern float azimuth;
+
 void moveToAzimuth(float target) {
   if (!compassFound) return;
   target = fmod(fmod(target, 360.0) + 360.0, 360.0);
-  azimuth = target; 
+  azimuth = target;
   float diff = target - currentYaw;
   if (diff > 180.0f)  diff -= 360.0f;
   if (diff < -180.0f) diff += 360.0f;
