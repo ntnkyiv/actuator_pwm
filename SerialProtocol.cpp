@@ -335,6 +335,28 @@ void handleSerialCommands() {
 
   // === Лінійний актуатор ===
 
+    //{"cmd":"pitch","value":30.0} — рухатись до кута; {"cmd":"pitch","value":null} — поточний стан
+    else if (strcmp(cmd, "pitch") == 0) {
+      if (!compassFound) {
+        doc["error"] = "Компас не підключено";
+        serializeJson(doc, Serial1);
+        Serial1.println();
+        return;
+      }
+      if (doc["value"].isNull()) {
+        doc["current_pitch"] = currentPitch;
+        doc["target_pitch"]  = targetPitch;
+        doc["pitch_mode"]    = pitchMode;
+      } else {
+        float target = doc["value"].as<float>();
+        moveToPitch(target);
+        doc["target_pitch"] = target;
+        doc["pitch_mode"]   = true;
+      }
+      serializeJson(doc, Serial1);
+      Serial1.println();
+    }
+
    //{"cmd":"lextend","value":null}
     else if (strcmp(cmd, "lextend") == 0){
       linearExtend();

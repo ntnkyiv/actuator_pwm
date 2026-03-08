@@ -78,6 +78,12 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
         return;
       }
 
+      else if (cmd.startsWith("pitch:")) {
+        if (!compassFound) { client->text("ERROR: компас не підключено"); return; }
+        float target = cmd.substring(6).toFloat();
+        moveToPitch(target);
+      }
+
       else if (cmd.startsWith("linear_speed:")) {
         int level = cmd.substring(13).toInt(); // -5..-1 = retract, 1..5 = extend
         int pwm = linearLevelToSpeed(abs(level));

@@ -2,11 +2,16 @@
 #include <Arduino.h>
 #include "LinearActuator.h"
 #include "config.h"
+#include "Compass.h"
 
 extern Preferences preferences;
 
 int linearSpeed = 0;      // -255 = назад, 255 = вперед, 0 = стоп
 bool linearExtended = false;
+bool pitchMode = false;
+float targetPitch = 0.0f;
+
+#define PITCH_DEADBAND 0.2f  // градус
 
 // Піни — можна будь-які вільні (наприклад 12 і 13)
 #define LIN_PIN_IN1  1   // GPIO1
@@ -103,8 +108,8 @@ void linearAutoBrake() {
 
 void linearExtend()   { linearSetSpeed(255); }
 void linearRetract()  { linearSetSpeed(-255); }
-void linearBrake()    { ledcWrite(LIN_PIN_IN1, 255); ledcWrite(LIN_PIN_IN2, 255); linearSpeed = 0; brakeScheduled = false; }
-void linearSleep()    { ledcWrite(LIN_PIN_IN1, 0);   ledcWrite(LIN_PIN_IN2, 0);   linearSpeed = 0; brakeScheduled = false; }
+void linearBrake()    { ledcWrite(LIN_PIN_IN1, 255); ledcWrite(LIN_PIN_IN2, 255); linearSpeed = 0; brakeScheduled = false; pitchMode = false; }
+void linearSleep()    { ledcWrite(LIN_PIN_IN1, 0);   ledcWrite(LIN_PIN_IN2, 0);   linearSpeed = 0; brakeScheduled = false; pitchMode = false; }
 void linearToggle()   { linearSpeed > 0 ? linearRetract() : linearExtend(); }
 
 void linearSetBrakeTime(uint32_t ms) {
@@ -132,4 +137,43 @@ int linearLevelToSpeed(int level) {
   level = constrain(level, 1, 5);
   int minS = (linearMinSpeed > 0) ? linearMinSpeed : 0;
   return (int)(minS + (level - 1) * (255 - minS) / 4.0f);
+}
+
+static float  pitchStallLastPitch = 0.0f;
+static unsigned long pitchStallLastChangeMs = 0;
+
+void moveToPitch(float pitch) {
+  if (!compassFound) return;
+  targetPitch = pitch;
+  pitchMode = true;
+  pitchStallLastPitch    = currentPitch;
+  pitchStallLastChangeMs = millis();
+}
+
+void updatePitchMode() {
+  if (!pitchMode) return;
+  if (!compassFound) { pitchMode = false; return; }
+
+  static unsigned long lastPitchUpdate = 0;
+  if (millis() - lastPitchUpdate < 200) return;
+  lastPitchUpdate = millis();
+
+  float diff = targetPitch - currentPitch;
+
+  if (fabs(diff) <= PITCH_DEADBAND) {
+    linearBrake(); // скидає pitchMode
+    return;
+  }
+
+  // Виявлення упору: pitch не змінився за 2 секунди
+  if (fabs(currentPitch - pitchStallLastPitch) > 0.3f) {
+    pitchStallLastPitch    = currentPitch;
+    pitchStallLastChangeMs = millis();
+  } else if (millis() - pitchStallLastChangeMs > 2000) {
+    linearBrake(); // скидає pitchMode
+    return;
+  }
+
+  int spd = linearLevelToSpeed(2); // повільно для точності
+  linearSetSpeed(diff > 0 ? -spd : spd);
 }

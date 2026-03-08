@@ -157,6 +157,11 @@ const char index_html[] PROGMEM = R"rawliteral(
     </div>
 
     <div class="control-group">
+      <input type="number" id="pitchTarget" value="0" min="-90" max="90" step="0.5" placeholder="°">
+      <button class="btn-action" onclick="s('pitch:'+document.getElementById('pitchTarget').value)">Go to Pitch</button>
+    </div>
+
+    <div class="control-group">
       <button class="btn-green" onclick="moveLinear('extend')">EXTEND</button>
       <button class="btn-action" onclick="moveLinear('retract')">RETRACT</button>
     </div>

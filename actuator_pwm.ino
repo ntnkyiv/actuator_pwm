@@ -89,7 +89,8 @@ void loop() {
   
   // 5. ЛІНІЙНИЙ АКТУАТОР
   linearAutoBrake();
-  updateCompassMode(); 
+  updatePitchMode();
+  updateCompassMode();
 
   // 6. ОНОВЛЕННЯ ДАНИХ СЕНСОРІВ (Розумна логіка)
   // Читаємо компас ТІЛЬКИ якщо двигун стоїть на місці (distanceToGo == 0)

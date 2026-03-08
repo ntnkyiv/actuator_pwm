@@ -15,7 +15,12 @@ void linearSetMinSpeed(uint8_t val);
 uint8_t linearGetMinSpeed();
 int linearLevelToSpeed(int level); // рівень 1–5 → PWM
 
+void moveToPitch(float pitch);
+void updatePitchMode();
+
 extern int linearSpeed;
 extern bool linearExtended;
 extern uint32_t brakeDelayMs;
 extern uint8_t linearMinSpeed;
+extern bool pitchMode;
+extern float targetPitch;
